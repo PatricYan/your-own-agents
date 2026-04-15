@@ -1,0 +1,51 @@
+# Example 4: Permission Control
+# Three agents with different permission levels.
+# The reviewer can only read. The fixer can read + write.
+# The tester can read + run shell commands.
+#
+# Run:
+#   agentpipe agents create perms-demo --pipeline examples/04-permissions-demo.yaml
+#   agentpipe run perms-demo --input '{"file": "examples/04-permissions-demo.yaml"}' --watch
+
+name: permission-controlled-pipeline
+execution_strategy: fail_fast
+
+tasks:
+  - name: reviewer
+    goal: |
+      Read the file specified in the input using the file_read tool.
+      Identify any issues or improvements. Submit your review as JSON.
+    system_prompt: "You are a code reviewer. You can only read files, not modify them."
+    primary_model: default
+    permissions:
+      read: allow
+      edit: deny
+      write: deny
+      bash: deny
+    max_iterations: 5
+
+  - name: fixer
+    goal: |
+      Based on the review in the input, create a file called output/fix-report.txt
+      with suggested fixes. Use the file_write tool. Submit confirmation.
+    system_prompt: "You are a code fixer. You can read and write files."
+    primary_model: default
+    permissions:
+      read: allow
+      write: allow
+      bash: deny
+    depends_on: reviewer
+    max_iterations: 5
+
+  - name: verifier
+    goal: |
+      Verify the fixes by reading output/fix-report.txt and running
+      'cat output/fix-report.txt' via shell. Submit the verification result.
+    system_prompt: "You are a verifier. You can read files and run shell commands."
+    primary_model: default
+    permissions:
+      read: allow
+      bash: allow
+      write: deny
+    depends_on: fixer
+    max_iterations: 5

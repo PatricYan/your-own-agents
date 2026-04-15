@@ -1,0 +1,55 @@
+# Example 3: Parallel Pipeline
+# Four agents: one starts, two run in parallel, one merges results.
+# This demonstrates fan-out / fan-in like Airflow.
+#
+# Run:
+#   agentpipe agents create parallel-demo --pipeline examples/03-parallel-pipeline.yaml
+#   agentpipe run parallel-demo --input '{"project": "agentpipe"}' --watch
+
+name: parallel-analysis
+execution_strategy: fail_fast
+
+tasks:
+  - name: gather
+    goal: |
+      Read the project name from input. Prepare a brief description
+      of what needs to be analyzed. Submit as JSON.
+    primary_model: default
+    permissions:
+      read: allow
+    max_iterations: 3
+
+  - name: analyze-code
+    goal: |
+      Analyze the code quality aspects of the project described in the input.
+      Focus on structure, naming, and patterns. Submit findings as JSON.
+    primary_model: default
+    permissions:
+      read: allow
+      glob: allow
+      grep: allow
+    depends_on: gather
+    max_iterations: 5
+
+  - name: analyze-docs
+    goal: |
+      Analyze the documentation quality of the project described in the input.
+      Focus on completeness and clarity. Submit findings as JSON.
+    primary_model: default
+    permissions:
+      read: allow
+      glob: allow
+    depends_on: gather
+    max_iterations: 5
+
+  - name: report
+    goal: |
+      Combine the code analysis and documentation analysis from the input.
+      Write a final report with recommendations. Submit as JSON.
+    primary_model: default
+    permissions:
+      read: allow
+    depends_on:
+      - analyze-code
+      - analyze-docs
+    max_iterations: 3

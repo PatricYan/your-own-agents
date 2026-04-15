@@ -1,0 +1,28 @@
+# Example 7: Configuration from Files
+# Goals and permissions can be loaded from separate files.
+# This keeps pipelines clean when goals are long or permissions are shared.
+#
+# Setup:
+#   - Create goals/ and permissions/ directories with the referenced files
+#   - Or use inline values as fallback
+#
+# Run:
+#   agentpipe agents create file-config --pipeline examples/07-file-config.yaml
+#   agentpipe run file-config --input '{"topic": "AI agents"}' --watch
+
+name: file-configured-pipeline
+execution_strategy: fail_fast
+
+tasks:
+  - name: researcher
+    goal: examples/goals/research.md           # load goal from file
+    permissions: examples/permissions/read-only.yaml  # load permissions from file
+    models: [gpt-4o, claude, local-llama]      # ordered: primary, fallback1, fallback2
+    max_iterations: 10
+
+  - name: writer
+    goal: examples/goals/write-report.md
+    permissions: examples/permissions/read-write.yaml
+    models: [claude, gpt-4o]
+    depends_on: researcher
+    max_iterations: 10

@@ -1,0 +1,10 @@
+# Read-write permissions — agent can read and create files
+read: allow
+edit: allow
+write: allow
+file_delete: deny
+bash: deny
+glob: allow
+grep: allow
+list: allow
+web_fetch: deny

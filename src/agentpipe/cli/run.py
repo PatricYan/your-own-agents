@@ -1,0 +1,298 @@
+"""CLI 'run' command handler: execute an agent's pipeline."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from agentpipe.cli.main import ErrorCode, error_output
+from agentpipe.execution.state import TaskStatus
+
+# ---------------------------------------------------------------------------
+# Interactive controller — lets the user interrupt and modify agents mid-run
+# ---------------------------------------------------------------------------
+
+
+class InteractiveController:
+    """Manages user interrupts during agent execution.
+
+    In --interactive mode, the user can press Ctrl+C at any time to pause.
+    When paused, they can:
+      - View current task state
+      - Update permissions (grant/revoke shell, file_write, etc.)
+      - Update the goal or system prompt
+      - Resume autonomous execution
+
+    The controller implements the on_before_iteration hook protocol.
+    """
+
+    def __init__(self) -> None:
+        self._paused = False
+        self._pending_update: dict[str, Any] | None = None
+        self._current_task_name: str = ""
+        self._current_iteration: int = 0
+
+    def request_pause(self) -> None:
+        """Called from signal handler to request a pause."""
+        self._paused = True
+
+    def on_before_iteration(self, iteration: int, task) -> Any:
+        """Hook called before each agent iteration."""
+        from agentpipe.core.task import Permissions
+
+        self._current_task_name = task.name
+        self._current_iteration = iteration
+
+        if not self._paused:
+            return None
+
+        # --- Paused: interactive menu ---
+        print(f"\n--- PAUSED at [{task.name}] iteration {iteration} ---")
+        print(f"  Goal: {task.goal}")
+        print(f"  Model: {task.primary_model}")
+        perms = task.permissions
+        print(
+            f"  Permissions: read={perms.file_read} write={perms.file_write} "
+            f"delete={perms.file_delete} shell={perms.shell} web={perms.web_fetch}"
+        )
+        print()
+        print("Commands:")
+        print("  r / resume      - Continue autonomous execution")
+        print("  p <perm> <on|off> - Toggle permission (e.g. 'p shell on')")
+        print("  g <new goal>    - Update the goal")
+        print("  s <new prompt>  - Update the system prompt")
+        print("  q / quit        - Abort the pipeline")
+        print()
+
+        updates: dict[str, Any] = {}
+        while True:
+            try:
+                cmd = input("> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nResuming...")
+                break
+
+            if not cmd:
+                continue
+
+            if cmd in ("r", "resume"):
+                break
+
+            if cmd in ("q", "quit"):
+                print("Aborting...")
+                raise KeyboardInterrupt
+
+            if cmd.startswith("p "):
+                parts = cmd.split(maxsplit=2)
+                if len(parts) == 3:
+                    perm_name, value = parts[1], parts[2].lower()
+                    valid_perms = {"file_read", "file_write", "file_delete", "shell", "web_fetch"}
+                    if perm_name in valid_perms and value in ("on", "off", "true", "false"):
+                        bool_val = value in ("on", "true")
+                        perm_dict = task.permissions.model_dump()
+                        perm_dict[perm_name] = bool_val
+                        updates["permissions"] = Permissions(**perm_dict)
+                        print(f"  {perm_name} = {bool_val}")
+                    else:
+                        print(f"  Invalid. Use: p <{'|'.join(valid_perms)}> <on|off>")
+                else:
+                    print("  Usage: p <permission> <on|off>")
+
+            elif cmd.startswith("g "):
+                new_goal = cmd[2:].strip()
+                if new_goal:
+                    updates["goal"] = new_goal
+                    print(f"  Goal updated: {new_goal}")
+
+            elif cmd.startswith("s "):
+                new_prompt = cmd[2:].strip()
+                if new_prompt:
+                    updates["system_prompt"] = new_prompt
+                    print("  System prompt updated")
+
+            else:
+                print(f"  Unknown command: {cmd}")
+
+        self._paused = False
+
+        if updates:
+            return task.model_copy(update=updates)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# CLI command
+# ---------------------------------------------------------------------------
+
+
+def cmd_run(args, workspace: Path, fmt: str) -> int:
+    """Execute the 'run' command."""
+    from agentpipe.core.agent import Agent
+    from agentpipe.models.adapters import create_provider
+    from agentpipe.models.registry import ModelConfig
+    from agentpipe.storage.definitions import DefinitionStore
+
+    store = DefinitionStore(workspace)
+
+    # Load agent
+    try:
+        agent_data = store.load_agent(args.agent_name)
+    except FileNotFoundError:
+        error_output(ErrorCode.AGENT_NOT_FOUND, f"Agent '{args.agent_name}' not found", fmt=fmt)
+        return 2
+
+    # Parse input
+    input_data = _parse_input(args, fmt)
+    if input_data is None:
+        return 3
+
+    # Reconstruct agent model configs
+    model_configs = []
+    for mc_name in agent_data.get("model_configs", []):
+        try:
+            mc_data = store.load_model(mc_name)
+            model_configs.append(ModelConfig(**mc_data))
+        except FileNotFoundError:
+            error_output(ErrorCode.MODEL_NOT_FOUND, f"Model '{mc_name}' not found", fmt=fmt)
+            return 2
+
+    # Build providers
+    providers: dict[str, Any] = {}
+    for mc in model_configs:
+        try:
+            providers[mc.name] = create_provider(mc)
+        except Exception as e:
+            error_output(
+                ErrorCode.MODEL_UNAVAILABLE, f"Cannot create provider for '{mc.name}': {e}", fmt=fmt
+            )
+            return 2
+
+    # Reconstruct pipeline from agent data
+    from agentpipe.loader.yaml_loader import load_pipeline_from_dict
+
+    pipeline = load_pipeline_from_dict(agent_data.get("pipeline", {}))
+
+    # Build Agent
+    agent = Agent(
+        name=args.agent_name,
+        pipeline=pipeline,
+        model_configs=model_configs,
+    )
+
+    # Status callback for --watch mode
+    watch = getattr(args, "watch", False)
+    interactive = getattr(args, "interactive", False)
+    start_time = time.time()
+
+    def on_status_change(task_name: str, status: TaskStatus, details: dict) -> None:
+        if watch or interactive:
+            if status == TaskStatus.RUNNING:
+                model = details.get("model", "")
+                print(f"[{task_name}] Running... (model: {model})")
+            elif status == TaskStatus.COMPLETED:
+                duration = details.get("duration_ms", 0) / 1000
+                recovered = " (recovered)" if details.get("recovered") else ""
+                print(f"[{task_name}] Completed ({duration:.1f}s){recovered}")
+            elif status == TaskStatus.FAILED:
+                err = details.get("error", "unknown error")
+                print(f"[{task_name}] Failed: {err}")
+
+    # Interactive mode: set up controller and Ctrl+C handler
+    controller = None
+    on_before_iteration = None
+
+    if interactive:
+        controller = InteractiveController()
+        on_before_iteration = controller.on_before_iteration
+
+        original_handler = None
+
+        import signal
+
+        def _sigint_handler(signum, frame):
+            if controller:
+                controller.request_pause()
+                print("\n[Ctrl+C] Pausing after current iteration... (press again to force quit)")
+                # Restore default handler so a second Ctrl+C force-quits
+                signal.signal(signal.SIGINT, original_handler or signal.default_int_handler)
+
+        original_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, _sigint_handler)
+
+        print("Interactive mode: press Ctrl+C at any time to pause and modify the running agent.")
+        print()
+
+    # Execute
+    try:
+        result = asyncio.run(
+            agent.execute(
+                input_data,
+                providers=providers,
+                on_status_change=on_status_change,
+                on_before_iteration=on_before_iteration,
+            )
+        )
+    except KeyboardInterrupt:
+        print("\nAborted by user.")
+        return 1
+    except Exception as e:
+        error_output(ErrorCode.RECOVERY_EXHAUSTED, str(e), fmt=fmt)
+        return 1
+
+    # Output result
+    if fmt == "json":
+        output = {
+            "status": "completed",
+            "result": result,
+            "duration_ms": int((time.time() - start_time) * 1000),
+        }
+        print(json.dumps(output, indent=2, default=str))
+    else:
+        elapsed = time.time() - start_time
+        print(f"\nExecution completed in {elapsed:.1f}s")
+        print("\nResult:")
+        if isinstance(result, dict):
+            for k, v in result.items():
+                print(f"  {k}: {v}")
+        else:
+            print(f"  {result}")
+
+    return 0
+
+
+def _parse_input(args, fmt: str) -> dict[str, Any] | None:
+    """Parse input data from --input or --input-file."""
+    if hasattr(args, "input_data") and args.input_data:
+        try:
+            data = json.loads(args.input_data)
+            if not isinstance(data, dict):
+                data = {"input": data}
+            return data
+        except json.JSONDecodeError as e:
+            error_output(ErrorCode.INPUT_INVALID, f"Invalid JSON input: {e}", fmt=fmt)
+            return None
+
+    if hasattr(args, "input_file") and args.input_file:
+        path = Path(args.input_file)
+        if not path.exists():
+            error_output(ErrorCode.INPUT_INVALID, f"Input file not found: {path}", fmt=fmt)
+            return None
+        content = path.read_text()
+        try:
+            if path.suffix in (".yaml", ".yml"):
+                data = yaml.safe_load(content)
+            else:
+                data = json.loads(content)
+            if not isinstance(data, dict):
+                data = {"input": data}
+            return data
+        except Exception as e:
+            error_output(ErrorCode.INPUT_INVALID, f"Cannot parse input file: {e}", fmt=fmt)
+            return None
+
+    return {"input": ""}

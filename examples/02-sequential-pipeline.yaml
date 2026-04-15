@@ -1,0 +1,32 @@
+# Example 2: Sequential Pipeline
+# Two agents in sequence — research then summarize.
+# The output of the first agent flows as input to the second.
+#
+# Run:
+#   agentpipe agents create researcher --pipeline examples/02-sequential-pipeline.yaml
+#   agentpipe run researcher --input '{"topic": "benefits of open source software"}' --watch
+
+name: research-and-summarize
+execution_strategy: fail_fast
+
+tasks:
+  - name: research
+    goal: |
+      Research the given topic. Use the shell tool to run
+      'echo' commands to simulate gathering information.
+      Produce a JSON result with key findings.
+    primary_model: default
+    permissions:
+      read: allow
+      bash: allow
+    max_iterations: 5
+
+  - name: summarize
+    goal: |
+      Take the research findings from the input and write
+      a concise 3-sentence summary. Submit the summary as your result.
+    primary_model: default
+    permissions:
+      read: allow
+    depends_on: research
+    max_iterations: 3

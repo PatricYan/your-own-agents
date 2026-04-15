@@ -1,0 +1,10 @@
+# Read-only permissions — agent can look but not touch
+read: allow
+edit: deny
+write: deny
+file_delete: deny
+bash: deny
+glob: allow
+grep: allow
+list: allow
+web_fetch: deny

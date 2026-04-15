@@ -1,0 +1,17 @@
+# Example 1: Hello World
+# The simplest pipeline — one agent, one goal.
+#
+# Run:
+#   agentpipe agents create hello --pipeline examples/01-hello-world.yaml
+#   agentpipe run hello --input '{"topic": "quantum computing"}'
+
+name: hello-world
+execution_strategy: fail_fast
+
+tasks:
+  - name: greet
+    goal: "Write a short, friendly greeting about the given topic. Call submit_result with your response."
+    primary_model: default
+    permissions:
+      read: allow
+    max_iterations: 3

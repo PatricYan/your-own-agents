@@ -1,0 +1,49 @@
+# Example 5: Conditional Routing
+# The evaluator scores the input. Based on the score,
+# execution routes to either the 'publish' or 'improve' agent.
+#
+# Run:
+#   agentpipe agents create quality-gate --pipeline examples/05-conditional-routing.yaml
+#   agentpipe run quality-gate --input '{"text": "AgentPipe is an Airflow-inspired agent framework."}' --watch
+
+name: quality-gate
+execution_strategy: fail_fast
+
+tasks:
+  - name: evaluate
+    goal: |
+      Evaluate the quality of the text in the input.
+      Score it from 0.0 to 1.0. Submit a JSON result like:
+      {"quality_score": 0.85, "feedback": "..."}
+    primary_model: default
+    permissions:
+      read: allow
+    max_iterations: 3
+
+  - name: publish
+    goal: |
+      The text passed quality review. Format it for publication.
+      Submit the formatted text as your result.
+    primary_model: default
+    permissions:
+      read: allow
+    max_iterations: 3
+
+  - name: improve
+    goal: |
+      The text failed quality review. Rewrite it to be better
+      based on the feedback in the input. Submit the improved text.
+    primary_model: default
+    permissions:
+      read: allow
+    max_iterations: 3
+
+edges:
+  - source: evaluate
+    target: publish
+    condition:
+      expression: "quality_score > 0.7"
+  - source: evaluate
+    target: improve
+    condition:
+      expression: "quality_score <= 0.7"
