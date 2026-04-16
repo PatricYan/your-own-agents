@@ -11,31 +11,18 @@ execution_strategy: fail_fast
 
 tasks:
   - name: evaluate
-    goal: |
-      Evaluate the quality of the text in the input.
-      Score it from 0.0 to 1.0. Submit a JSON result like:
-      {"quality_score": 0.85, "feedback": "..."}
+    goal: examples/goals/evaluate-quality.md
     primary_model: default
-    permissions:
-      read: allow
     max_iterations: 3
 
   - name: publish
-    goal: |
-      The text passed quality review. Format it for publication.
-      Submit the formatted text as your result.
+    goal: examples/goals/publish.md
     primary_model: default
-    permissions:
-      read: allow
     max_iterations: 3
 
   - name: improve
-    goal: |
-      The text failed quality review. Rewrite it to be better
-      based on the feedback in the input. Submit the improved text.
+    goal: examples/goals/improve-text.md
     primary_model: default
-    permissions:
-      read: allow
     max_iterations: 3
 
 edges:

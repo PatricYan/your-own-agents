@@ -133,24 +133,22 @@ class RecoveryManager:
         """
         decompose_prompt = (
             f"The following task failed with error: {error}\n\n"
-            f"Original task: {task.prompt_template}\n\n"
+            f"Original task goal: {task.goal}\n\n"
             f"Please break this task into 2-3 smaller, simpler steps. "
             f"For each step, provide the instruction on a new line prefixed with 'STEP: '.\n"
             f"Input data: {input_data}"
         )
 
         try:
-            # Use the primary model to get decomposition
             response = await self._runner.run_task(
                 TaskDefinition(
                     name=f"{task.name}_decompose",
-                    prompt_template=decompose_prompt,
+                    goal=decompose_prompt,
                     primary_model=task.primary_model,
                 ),
                 input_data,
             )
 
-            # Parse steps from response
             response_text = response.get("text", response.get("raw", ""))
             steps = [
                 line.replace("STEP:", "").strip()
@@ -162,12 +160,11 @@ class RecoveryManager:
                 logger.debug("Task '%s': Decomposition produced no steps", task.name)
                 return None
 
-            # Execute subtasks sequentially
             current_input = input_data
             for i, step in enumerate(steps):
                 subtask = TaskDefinition(
                     name=f"{task.name}_subtask_{i}",
-                    prompt_template=step + "\n\nInput: {input}",
+                    goal=step,
                     primary_model=task.primary_model,
                 )
                 current_input = await self._runner.run_task(subtask, current_input)

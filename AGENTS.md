@@ -13,21 +13,25 @@ src/
 ├── agentpipe/
 │   ├── __init__.py          # Package exports
 │   ├── __main__.py          # CLI entry point (python -m agentpipe)
+│   ├── schema/              # Shared data schemas (no business logic)
+│   │   ├── conversation.py  # Message, ToolCall, ToolResult, Conversation
+│   │   └── tool_schema.py   # ToolDefinition, ToolParameter
 │   ├── cli/
 │   │   ├── main.py          # CLI argument parsing and command dispatch
-│   │   ├── run.py           # 'run' command handler
+│   │   ├── run.py           # 'run' command handler + InteractiveController
 │   │   ├── models.py        # 'models' command handler
 │   │   ├── pipelines.py     # 'agents' and 'pipelines' command handlers
 │   │   └── status.py        # 'status' command handler
 │   ├── core/
 │   │   ├── agent.py         # Agent entity (pipeline + models + tools)
 │   │   ├── pipeline.py      # Pipeline/DAG definition and validation
-│   │   ├── task.py          # Task definition (goal-based autonomous agent)
+│   │   ├── task.py          # TaskDefinition + Permissions (OpenCode format)
 │   │   ├── condition.py     # Condition expression evaluation
-│   │   └── constraint.py    # Constraint definitions and enforcement
+│   │   ├── constraint.py    # Constraint definitions and enforcement
+│   │   └── visualize.py     # ASCII and Mermaid DAG rendering
 │   ├── execution/
 │   │   ├── agent_loop.py    # Core think-act-observe agentic loop
-│   │   ├── conversation.py  # Message, ToolCall, Conversation models
+│   │   ├── conversation.py  # (shim: re-exports from schema/)
 │   │   ├── engine.py        # DAG executor (topological sort, async scheduling)
 │   │   ├── runner.py        # Task runner (delegates to agent loop)
 │   │   ├── recovery.py      # Three-tier recovery cascade
@@ -42,7 +46,7 @@ src/
 │   │       ├── ollama.py    # Ollama adapter
 │   │       └── http.py      # Generic HTTP adapter
 │   ├── tools/
-│   │   ├── base.py          # Tool ABC, ToolDefinition schema
+│   │   ├── base.py          # Tool ABC (imports ToolDefinition from schema/)
 │   │   ├── registry.py      # ToolRegistry + default factory
 │   │   └── builtin/
 │   │       ├── file_read.py
@@ -57,17 +61,28 @@ src/
 │       ├── yaml_loader.py   # YAML pipeline loader
 │       └── json_loader.py   # JSON pipeline loader
 tests/
-├── conftest.py              # Shared fixtures
-├── unit/
-├── contract/
-└── integration/
+├── conftest.py              # Shared fixtures + mock providers
+├── test_schema.py           # Schema types (standalone)
+├── test_permissions.py      # OpenCode-style permissions
+├── test_core.py             # Task, Pipeline, Condition, Constraint
+├── test_tools.py            # 10 built-in tools + registry
+├── test_execution.py        # Agent loop, DAG engine, recovery
+├── test_context_control.py  # Token budget, context window, session reuse
+├── test_isolation.py        # Provider isolation, module independence
+├── test_model_contract.py   # Contract tests with local mock HTTP server
+├── test_storage.py          # Definition store, history store
+├── test_loader.py           # YAML/JSON pipeline loading
+├── test_web_api.py          # REST API endpoints
+└── test_tutorial.py         # End-to-end integration
 ```
 
 ## Commands
 
 ```bash
-# Install
-pip install -e ".[dev]"
+# Install (conda)
+conda env create -f environment.yml
+conda activate agentpipe
+make post-setup
 
 # Lint
 ruff check src/
@@ -100,6 +115,11 @@ Python 3.11+: Follow standard conventions. Ruff configured with pycodestyle, pyf
 - **Abstract base class** for ModelProvider (multi-turn chat + tool calling) and Tool
 - **Agent Loop** (think-act-observe cycle): model reasons, calls tools, observes results, iterates
 - **Per-task tool permissions** enforced at execution time (not just definition time)
+- **Per-task provider isolation** — each task creates its own model provider (own HTTP session, own context)
+- **Shared schema/** — Message, ToolCall, ToolDefinition live in `schema/` so all modules can import without circular deps
+- **Token budget** (`max_tokens`) and **context window** (`context_window`) control per task
+- **Conversation trimming** — old messages automatically removed when context grows too large
+- **HTTP session reuse** within a task (connection pooling) + **retry with backoff** on transient errors
 - **asyncio** for concurrent agent execution within pipelines
 - **Topological sort** (Kahn's algorithm) for DAG scheduling
 - **Sandboxed eval** for condition expressions with restricted builtins

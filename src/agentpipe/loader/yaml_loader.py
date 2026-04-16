@@ -119,6 +119,8 @@ def _parse_tasks(
             depends_on=raw_task.get("depends_on", []),
             max_iterations=raw_task.get("max_iterations", 20),
             max_tool_calls=raw_task.get("max_tool_calls"),
+            max_tokens=raw_task.get("max_tokens"),
+            context_window=raw_task.get("context_window"),
             input_schema=raw_task.get("input_schema"),
             output_schema=raw_task.get("output_schema"),
             constraints=constraints,

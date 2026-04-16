@@ -246,17 +246,16 @@ class TestPermissions:
     def test_custom_permissions(self):
         from agentpipe.core.task import Permissions
 
-        p = Permissions(edit="allow", bash="ask", write="allow")
+        p = Permissions({"edit": "allow", "bash": "ask"})
         assert p.allows("edit")
         assert p.allows("shell")  # ask counts as allowed
-        assert p.needs_approval("shell")  # but needs approval
         assert not p.is_denied("shell")
-        assert p.allows("file_write")  # write=allow
+        assert p.allows("file_write")  # edit covers file_write
 
     def test_denied_tools(self):
         from agentpipe.core.task import Permissions
 
-        p = Permissions(read="deny", bash="deny")
+        p = Permissions({"read": "deny", "bash": "deny"})
         assert p.is_denied("file_read")
         assert p.is_denied("shell")
         assert not p.allows("file_read")
@@ -264,17 +263,17 @@ class TestPermissions:
     def test_allowed_tool_names(self):
         from agentpipe.core.task import Permissions
 
-        p = Permissions(edit="allow", bash="allow", write="deny")
+        p = Permissions({"edit": "allow", "bash": "allow"})
         names = p.allowed_tool_names()
         assert "file_read" in names  # default allow
         assert "edit" in names
         assert "shell" in names
-        assert "file_write" not in names  # deny
+        assert "file_write" in names  # edit=allow covers file_write
 
     def test_unknown_tool_uses_default(self):
         from agentpipe.core.task import Permissions
 
-        p = Permissions(default="deny")
+        p = Permissions({"*": "deny"})
         assert p.is_denied("some_unknown_tool")
 
     def test_effective_tools_from_permissions(self):
@@ -284,7 +283,7 @@ class TestPermissions:
             name="t",
             goal="g",
             primary_model="m",
-            permissions=Permissions(read="allow", edit="allow", bash="deny"),
+            permissions=Permissions({"read": "allow", "edit": "allow", "bash": "deny"}),
         )
         eff = t.effective_tools()
         assert "file_read" in eff
@@ -298,7 +297,7 @@ class TestPermissions:
             name="t",
             goal="g",
             primary_model="m",
-            permissions=Permissions(bash="deny"),
+            permissions=Permissions({"bash": "deny"}),
             tools=["shell", "web_fetch"],
         )
         assert t.effective_tools() == ["shell", "web_fetch"]
@@ -457,7 +456,7 @@ class TestAgentLoop:
             name="t",
             goal="Do something",
             primary_model="m",
-            permissions=Permissions(bash="deny"),
+            permissions=Permissions({"bash": "deny"}),
         )
         reg = create_default_registry()
         loop = AgentLoop(provider=model, tool_registry=reg)
@@ -645,7 +644,7 @@ class TestHumanInLoop:
                 # Grant bash on first iteration
                 return task.model_copy(
                     update={
-                        "permissions": Permissions(read="allow", bash="allow"),
+                        "permissions": Permissions({"read": "allow", "bash": "allow"}),
                     }
                 )
             return None
@@ -654,7 +653,7 @@ class TestHumanInLoop:
             name="t",
             goal="g",
             primary_model="m",
-            permissions=Permissions(bash="deny"),
+            permissions=Permissions({"bash": "deny"}),
         )
         reg = create_default_registry()
         loop = AgentLoop(provider=MockModel(), tool_registry=reg, on_before_iteration=hook)
@@ -1108,7 +1107,7 @@ class TestDAGVisualization:
                     name="worker",
                     goal="Work",
                     primary_model="gpt-4o",
-                    permissions=Permissions(read="allow", edit="allow", bash="deny"),
+                    permissions=Permissions({"read": "allow", "edit": "allow", "bash": "deny"}),
                     max_iterations=15,
                 ),
             ],

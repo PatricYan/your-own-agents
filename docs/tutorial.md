@@ -260,53 +260,40 @@ agentpipe run multi-model --input '{"task": "write a sorting algorithm"}' --watc
 
 ## 9. Tutorial 7: Configuration from Files
 
-Goals and permissions can live in separate files, keeping pipelines clean.
+Goals, prompts, and permissions can all live in separate files. This keeps pipelines clean and configs reusable.
 
-**View the example:**
+**View the file layout:**
 
 ```bash
-cat examples/goals/research.md           # goal loaded from Markdown
-cat examples/permissions/read-only.yaml  # permissions loaded from YAML
-cat examples/07-file-config.yaml         # pipeline references these files
+ls examples/goals/        # .md files for goals
+ls examples/prompts/      # .md files for system prompts
+ls examples/permissions/  # .yaml files for permissions
+cat examples/07-file-config.yaml   # pipeline that references all three
 ```
 
-The pipeline references files instead of inline text:
+**Three fields support file paths:**
 
 ```yaml
 tasks:
   - name: researcher
-    goal: examples/goals/research.md               # file path
-    permissions: examples/permissions/read-only.yaml # file path
-    models: [gpt-4o, claude, local-llama]           # ordered model list
+    goal: examples/goals/research.md               # .md or .txt
+    system_prompt: examples/prompts/researcher.md   # .md, .txt, or .prompt
+    permissions: examples/permissions/read-only.yaml # .yaml or .json
+    models: [gpt-4o, claude, local-llama]
 ```
 
-**How models list works:**
+If the value is a path to an existing file with a supported extension, its contents are loaded. Otherwise the value is used as-is (inline).
 
-```yaml
-models: [gpt-4o, claude, local-llama]
-# Equivalent to:
-#   primary_model: gpt-4o
-#   fallback_models: [claude, local-llama]
-```
-
-The first model is primary. If it fails, the system tries the next one in order.
-
-**Shared permission files:**
-
-Create reusable permission presets:
+**Reusable presets:**
 
 ```
-examples/permissions/
-├── read-only.yaml      # can only read
-├── read-write.yaml     # can read + write
-└── full-access.yaml    # can do everything
+examples/
+├── goals/           research.md, write-report.md
+├── prompts/         code-reviewer.md, code-fixer.md, researcher.md, report-writer.md, tester.md
+└── permissions/     read-only.yaml, read-write.yaml, reviewer.yaml, developer.yaml, tester.yaml, full-access.yaml
 ```
 
-Reference them from any pipeline:
-
-```yaml
-permissions: examples/permissions/read-only.yaml
-```
+Reference them from any pipeline — share the same prompt or permission across multiple tasks or pipelines.
 
 **Create and run (requires gpt-4o, claude, and local-llama registered):**
 
@@ -317,6 +304,7 @@ agentpipe run file-config --input '{"topic": "AI agents"}' --watch
 
 **What to verify:**
 - Goals are loaded from `.md` files
+- System prompts are loaded from `.md` files
 - Permissions are loaded from `.yaml` files
 - Models list determines primary + fallback order
 
@@ -383,16 +371,17 @@ pipeline = Pipeline(
     tasks=[
         TaskDefinition(
             name="research",
-            goal="Research the topic and produce key findings",
+            goal="examples/goals/research.md",
+            system_prompt="examples/prompts/researcher.md",
             primary_model="default",
-            permissions=Permissions(read="allow", bash="allow"),
+            permissions=Permissions({"*": "deny", "read": "allow", "bash": "allow"}),
             max_iterations=5,
         ),
         TaskDefinition(
             name="summarize",
-            goal="Summarize the research findings",
+            goal="examples/goals/summarize.md",
             primary_model="default",
-            permissions=Permissions(read="allow"),
+            # no permissions override → default read-only
             depends_on="research",
             max_iterations=3,
         ),
@@ -463,11 +452,36 @@ After you type `r`, the pipeline resumes autonomously with the updated settings.
 | 10. Python API | Library usage |
 | 11. Interactive | Ctrl+C interrupt, mid-run permission/goal changes |
 
+## Token and Context Control
+
+For long-running agents, control token usage and conversation size:
+
+```yaml
+tasks:
+  - name: researcher
+    goal: goals/research.md
+    primary_model: default
+    max_iterations: 20       # max think-act-observe cycles
+    max_tokens: 50000        # stop after spending 50K tokens total
+    context_window: 8000     # trim conversation to fit 8K tokens
+```
+
+- `max_tokens` — total token budget. The agent stops when this is exceeded.
+- `context_window` — old messages are automatically trimmed to keep the conversation within this limit. System prompt is always preserved.
+
+## Agent Isolation
+
+Each task in a pipeline runs in complete isolation:
+
+- Each task creates its own model provider (own HTTP session, own connection)
+- No conversation history is shared between agents
+- Parallel tasks never interfere with each other
+- Data flows only through the DAG (upstream output → downstream input)
+
 ## Troubleshooting
 
-**"Model provider not found"** — You need to register a model first:
+**"Model provider not found"** — Register a model first:
 ```bash
-agentpipe models list
 agentpipe models register default --provider openai --connection '{"api_key_env": "OPENAI_API_KEY", "model": "gpt-4o-mini"}'
 ```
 
@@ -476,15 +490,20 @@ agentpipe models register default --provider openai --connection '{"api_key_env"
 export OPENAI_API_KEY="sk-..."
 ```
 
-**Agent runs but produces empty output** — Check that the model is responding. Test it:
+**Agent runs but produces empty output** — Test the model directly:
 ```bash
 agentpipe models test default --prompt "Say hello"
 ```
 
-**Task keeps looping** — Increase `max_iterations` or make the goal more specific. The agent needs a clear signal of when to call `submit_result`.
+**Task keeps looping** — Set `max_iterations` or `max_tokens` to limit the agent. Make the goal more specific so the agent knows when to call `submit_result`.
 
-**Permission denied for a tool** — Check the task's permissions in the YAML. Set the tool to `allow`:
+**Permission denied for a tool** — Set the tool to `allow` in permissions:
 ```yaml
 permissions:
   bash: allow
+```
+
+**Conversation too large** — Set `context_window` to automatically trim old messages:
+```yaml
+context_window: 8000
 ```

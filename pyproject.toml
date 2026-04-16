@@ -60,7 +60,9 @@ select = [
     "SIM", # flake8-simplify
 ]
 ignore = [
-    "E501", # line too long (handled by formatter)
+    "E501",  # line too long (handled by formatter)
+    "N802",  # function name should be lowercase (conflicts with stdlib overrides like do_POST, setUp)
+    "N803",  # argument name should be lowercase (conflicts with stdlib/pydantic conventions)
 ]
 
 [tool.ruff.lint.isort]

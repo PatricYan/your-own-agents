@@ -1,10 +1,2 @@
-# Full access — agent can do everything
-read: allow
-edit: allow
-write: allow
-file_delete: allow
-bash: allow
-glob: allow
-grep: allow
-list: allow
-web_fetch: allow
+# Full access
+"*": allow

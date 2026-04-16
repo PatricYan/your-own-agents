@@ -29,28 +29,18 @@ Permissions follow OpenCode's model: each tool is set to `allow`, `ask`, or `den
 ```yaml
 tasks:
   - name: code-reviewer
-    goal: "Review the code for bugs and security issues"
-    system_prompt: "You are a senior security engineer."
+    goal: goals/review-code.md
+    system_prompt: prompts/security-engineer.md
     primary_model: gpt-4o
-    permissions:
-      read: allow
-      edit: deny         # cannot modify anything
-      bash: deny         # cannot run commands
-      glob: allow
-      grep: allow
+    permissions: permissions/reviewer.yaml
     max_iterations: 10
 
   - name: code-fixer
-    goal: "Fix all issues found in the review"
+    goal: goals/fix-code.md
+    system_prompt: prompts/code-fixer.md
     primary_model: claude-sonnet
     fallback_models: [gpt-4o]
-    permissions:
-      read: allow
-      edit: allow        # can modify files
-      write: allow       # can create files
-      bash: ask          # can run commands (with approval in interactive mode)
-      glob: allow
-      grep: allow
+    permissions: permissions/developer.yaml
     max_iterations: 20
 ```
 
@@ -61,23 +51,26 @@ Dependencies are declared Airflow-style using `depends_on` directly on the task.
 ```yaml
 tasks:
   - name: research
-    goal: "Gather information"
+    goal: goals/gather-info.md
     primary_model: gpt-4o
     # no depends_on → runs first (entry task)
 
   - name: write-code
-    goal: "Write the implementation"
+    goal: goals/write-implementation.md
     primary_model: claude-sonnet
+    permissions: permissions/developer.yaml
     depends_on: research              # 1 dependency (string)
 
   - name: write-tests
-    goal: "Write test cases"
+    goal: goals/write-tests.md
     primary_model: gpt-4o
-    depends_on: research              # also depends on research (runs parallel with write-code)
+    permissions: permissions/developer.yaml
+    depends_on: research              # also depends on research (parallel with write-code)
 
   - name: integrate
-    goal: "Integrate and verify"
+    goal: goals/integrate-and-verify.md
     primary_model: gpt-4o
+    permissions: permissions/tester.yaml
     depends_on: [write-code, write-tests]   # 2+ dependencies (list)
 ```
 
@@ -181,20 +174,21 @@ execution_strategy: fail_fast
 
 tasks:
   - name: research
-    goal: "Search the web for recent information about the given topic and collect key findings"
+    goal: goals/research.md
+    system_prompt: prompts/researcher.md
     primary_model: gpt-4o
     permissions:
-      file_read: true
-      file_write: true
-      web_fetch: true
+      "*": deny
+      read: allow
+      glob: allow
+      webfetch: allow
     max_iterations: 10
 
   - name: summarize
-    goal: "Read the research findings and produce a concise executive summary"
+    goal: goals/summarize.md
     primary_model: local-llama
-    permissions:
-      file_read: true
-    depends_on: [research]
+    # no permissions override → default read-only
+    depends_on: research
     max_iterations: 5
 ```
 
@@ -216,16 +210,16 @@ pipeline = Pipeline(
     tasks=[
         TaskDefinition(
             name="write",
-            goal="Write a Python function that solves the given problem",
+            goal="goals/write-function.md",       # loaded from file
             primary_model="gpt-4o",
-            permissions=Permissions(file_read=True, file_write=True),
+            permissions=Permissions({"*": "deny", "read": "allow", "edit": "allow"}),
             max_iterations=10,
         ),
         TaskDefinition(
             name="test",
-            goal="Write tests for the function and run them, fix any failures",
+            goal="goals/test-and-fix.md",          # loaded from file
             primary_model="gpt-4o",
-            permissions=Permissions(file_read=True, file_write=True, shell=True),
+            permissions=Permissions({"*": "deny", "read": "allow", "edit": "allow", "bash": "allow"}),
             depends_on=["write"],
             max_iterations=15,
         ),
@@ -247,80 +241,115 @@ result = asyncio.run(agent.execute({"problem": "fibonacci sequence generator"}))
 ## Task Configuration Reference
 
 ```yaml
-- name: task-name                         # unique within pipeline
-  goal: "what to accomplish"              # or a file path: goals/my-goal.md
-  system_prompt: "agent persona"          # optional
-  models: [gpt-4o, claude, llama]         # ordered: primary, fallback1, fallback2
-  depends_on: upstream-task               # or [a, b] for multiple
-  permissions:                            # inline or file path: permissions/read-only.yaml
-    read: allow
-    edit: deny
-    bash: deny
-  max_iterations: 20
-  max_tool_calls: 50
+- name: task-name
+  goal: goals/my-goal.md                            # file path (.md, .txt)
+  system_prompt: prompts/my-prompt.md                # file path (.md, .txt, .prompt)
+  permissions: permissions/my-perms.yaml             # file path (.yaml, .json)
+  models: [gpt-4o, claude, llama]                   # ordered: primary, fallback1, fallback2
+  depends_on: upstream-task                         # or [a, b] for multiple
+  max_iterations: 20                                # max think-act-observe cycles
+  max_tool_calls: 50                                # max total tool invocations
+  max_tokens: 50000                                 # total token budget; loop stops if exceeded
+  context_window: 8000                              # max tokens in conversation; old messages trimmed
   constraints:
     - type: timeout
       value: 300
       on_violation: fail
 ```
 
-**Configuration from files** — keep pipelines clean:
+Keep your pipeline YAML clean. All the detail lives in files:
 
-```yaml
-tasks:
-  - name: researcher
-    goal: goals/research.md                        # loads from Markdown file
-    permissions: permissions/read-only.yaml         # loads from YAML file
-    models: [gpt-4o, claude, local-llama]
 ```
-
-See `examples/goals/` and `examples/permissions/` for reusable presets.
+examples/
+├── goals/           # what each agent should accomplish
+│   ├── research.md
+│   ├── review-code.md
+│   ├── fix-code.md
+│   ├── write-implementation.md
+│   ├── write-tests.md
+│   └── ...
+├── prompts/         # agent persona and behavioral rules
+│   ├── code-reviewer.md
+│   ├── code-fixer.md
+│   ├── researcher.md
+│   └── ...
+└── permissions/     # what each agent can do (OpenCode format)
+    ├── read-only.yaml
+    ├── reviewer.yaml
+    ├── developer.yaml
+    ├── tester.yaml
+    └── full-access.yaml
+```
 
 ## Permissions
 
-Modeled after OpenCode's permission system. Each permission is `allow`, `ask`, or `deny`.
+Follows [OpenCode's permission format](https://opencode.ai/docs/permissions) exactly. Each rule resolves to `allow`, `ask`, or `deny`.
 
-| Permission | Default | Controls |
-|-----------|---------|----------|
-| `read` | allow | Read files (`file_read`) |
-| `edit` | deny | Edit files in-place (`edit`) |
-| `write` | deny | Create/overwrite files (`file_write`) |
-| `file_delete` | deny | Delete files (`file_delete`) |
-| `bash` | deny | Execute shell commands (`shell`) |
-| `glob` | allow | Find files by pattern (`glob`) |
-| `grep` | allow | Search file contents (`grep`) |
-| `list` | allow | List directories (`list`) |
-| `web_fetch` | deny | Fetch URLs (`web_fetch`) |
-| `submit_result` | allow | Signal completion (always on) |
+### Simple: set all tools at once
+
+```yaml
+permissions: allow
+```
+
+### Per-tool: global default + overrides
 
 ```yaml
 permissions:
-  read: allow        # can read
-  edit: deny         # cannot edit
-  write: allow       # can create files
-  bash: ask          # needs approval in interactive mode
-  glob: allow        # can search files
-  web_fetch: deny    # no network access
+  "*": ask             # default for tools not listed
+  read: allow
+  edit: deny
+  bash: deny
 ```
+
+### Granular: wildcard patterns within a tool
+
+```yaml
+permissions:
+  "*": allow
+  bash:
+    "*": deny          # deny shell by default
+    "git *": allow     # but allow git commands
+    "npm *": allow     # and npm
+    "pytest *": allow  # and pytest
+    "rm *": deny       # explicitly deny rm
+  webfetch: deny
+```
+
+Rules are matched by pattern. Last matching pattern wins (same as OpenCode).
+
+### Permission keys
+
+By default, tasks are **read-only**. Everything destructive is denied unless you explicitly grant it.
+
+| Key | Default | Controls |
+|-----|---------|----------|
+| `read` | **allow** | Read files |
+| `glob` | **allow** | Find files by pattern |
+| `grep` | **allow** | Search file contents |
+| `list` | **allow** | List directories |
+| `submit_result` | **allow** | Signal task completion |
+| `edit` | deny | Edit, write, create, delete files |
+| `bash` | deny | Execute shell commands |
+| `webfetch` | deny | Fetch URLs |
+| `task` | deny | Launch sub-agents |
+| `*` (everything else) | deny | Any tool not listed above |
 
 If you set `tools: [...]` explicitly, that overrides the permissions-derived tool list.
 
 ## Built-in Tools
 
-Modeled after OpenCode and Codex CLI:
-
-| Tool | Permission | Default | Description |
-|------|-----------|---------|-------------|
-| `file_read` | `read` | allow | Read file contents (with offset/limit) |
-| `edit` | `edit` | deny | Edit files by exact string replacement |
-| `file_write` | `write` | deny | Write/create files and directories |
-| `file_delete` | `file_delete` | deny | Delete files |
-| `shell` | `bash` | deny | Execute shell commands (with timeout) |
-| `glob` | `glob` | allow | Find files by glob pattern |
-| `grep` | `grep` | allow | Search file contents by regex |
-| `list` | `list` | allow | List files and directories |
-| `web_fetch` | `web_fetch` | deny | Fetch content from a URL |
-| `submit_result` | `submit_result` | allow | Signal task completion with output |
+| Tool | Permission key | Description |
+|------|---------------|-------------|
+| `file_read` | `read` | Read file contents (with offset/limit) |
+| `edit` | `edit` | Edit files by exact string replacement |
+| `file_write` | `edit` | Write/create files and directories |
+| `file_delete` | `edit` | Delete files |
+| `shell` | `bash` | Execute shell commands (with timeout) |
+| `glob` | `glob` | Find files by glob pattern |
+| `grep` | `grep` | Search file contents by regex |
+| `list` | `list` | List files and directories |
+| `web_fetch` | `webfetch` | Fetch content from a URL |
+| `submit_result` | `submit_result` | Signal task completion with output |
 
 ## Updating an Agent Mid-Run
 
@@ -403,6 +432,45 @@ When an agent fails, three-tier recovery kicks in:
 1. **Retry**: re-run the agent loop from scratch (same model, exponential backoff)
 2. **Fallback model**: switch to the next model in `fallback_models`
 3. **Subtask decomposition**: ask a model to break the problem into smaller pieces
+
+## Token and Context Control
+
+When agents run many iterations, the conversation grows and can exceed the model's context window. Two controls prevent this:
+
+**`max_tokens`** — total token budget for the agent. The loop stops when the accumulated token usage exceeds this limit:
+
+```yaml
+  max_tokens: 50000       # stop after spending 50K tokens total
+```
+
+**`context_window`** — maximum tokens in the conversation sent to the model. When exceeded, older messages are automatically trimmed:
+
+```yaml
+  context_window: 8000    # keep conversation under 8K tokens
+```
+
+Trimming strategy:
+1. System prompt is always preserved (it's the agent's identity)
+2. Oldest non-system messages are removed first
+3. Recent messages are kept (the model needs recent context)
+
+Token usage is tracked per agent and reported in the result:
+
+```python
+result = await agent.execute(input_data)
+# result includes: total_tokens, prompt_tokens, completion_tokens
+```
+
+## Agent Isolation
+
+Each agent-task in a pipeline runs in complete isolation:
+
+- **Own provider instance** — each task creates its own HTTP session and connection to the model API
+- **Own conversation** — no message history shared between agents
+- **Own tool context** — tool calls don't leak between parallel agents
+- **Data flows only through the DAG** — upstream output becomes downstream input, nothing else is shared
+
+This means parallel agents (tasks at the same level in the DAG) never interfere with each other.
 
 ## View the Pipeline DAG
 
@@ -546,19 +614,20 @@ WS   /ws
 
 ```
 src/agentpipe/
-├── core/           # Task (agent definition), Pipeline (DAG), Condition, Constraint
-├── execution/      # Agent loop (think-act-observe), DAG engine, recovery
-├── models/         # ModelProvider (multi-turn + tool calling) + adapters
-│   └── adapters/   # OpenAI, Anthropic, Ollama, HTTP
-├── tools/          # Tool interface + registry + built-in tools
-│   └── builtin/    # file_read, edit, file_write, file_delete, shell, glob, grep, list, web_fetch, submit_result
-├── storage/        # YAML definitions + SQLite execution history
-├── loader/         # YAML/JSON pipeline loaders
-├── web/            # REST API server (Starlette/ASGI) + WebSocket
-└── cli/            # run, agents, models, pipelines, status, serve
+├── schema/         # Shared data types (Message, ToolCall, ToolDefinition) — no dependencies
+├── core/           # Task, Pipeline, Permissions, Condition, Constraint — depends on schema/
+├── tools/          # Tool ABC + 10 built-in tools + registry — depends on schema/
+├── models/         # ModelProvider + adapters (OpenAI, Anthropic, Ollama, HTTP) — depends on schema/
+├── execution/      # Agent loop, DAG engine, recovery, conversation window — depends on all above
+├── storage/        # YAML definitions + SQLite history — standalone
+├── loader/         # YAML/JSON pipeline loaders — depends on core/
+├── web/            # REST API + WebSocket (Starlette) — depends on execution/
+└── cli/            # CLI commands (run, agents, models, pipelines, status, serve) — top level
 
 web/frontend/       # React + React Flow (n8n-style DAG canvas)
 ```
+
+Each layer only depends on layers below it. Any module can be imported and used independently.
 
 ## CLI
 
@@ -590,21 +659,32 @@ See `make help` for all commands.
 
 ### Commit Gates
 
-Every `git commit` is gated by three automatic checks:
+Every `git commit` is automatically gated by pre-commit hooks. No commit goes through unless all pass.
 
-| Gate | What it checks | Blocks commit if |
-|------|---------------|------------------|
-| Code format | `ruff lint` + `ruff format` | Lint errors or wrong formatting |
-| Unit tests | `pytest tests/` | Any test fails |
-| Commit message | [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) | Message format wrong |
+| Gate | What runs | Blocks if |
+|------|----------|-----------|
+| **Ruff lint** | `ruff check --fix` on staged Python files | Unfixable lint errors |
+| **Ruff format** | `ruff format` on staged Python files | Code not formatted |
+| **File hygiene** | Trailing whitespace, YAML/JSON syntax, merge conflicts, debug statements | Any violation |
+| **Unit tests** | `pytest tests/ --tb=short -q` | Any test fails |
+| **Commit message** | [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format | Wrong format |
 
-```bash
-# These all run automatically on git commit:
-git commit -m "feat(core): add new feature"    # passes all 3 gates
-git commit -m "fixed stuff"                     # blocked by gate 3
+Commit message format: `<type>(<scope>): <description>`
+
+```
+feat(core): add token budget control        # new feature
+fix(execution): handle timeout in loop       # bug fix
+docs: update tutorial                        # docs only
+refactor(models): extract http session       # restructuring
+test(tools): add grep tool tests             # tests
+build: update conda environment              # dependencies
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full commit message format guide.
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`
+
+Scopes (optional): `core`, `execution`, `tools`, `models`, `schema`, `cli`, `web`, `docs`
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 ## Requirements
 

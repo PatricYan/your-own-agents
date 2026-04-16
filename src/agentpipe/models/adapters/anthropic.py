@@ -5,11 +5,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import httpx
-
-from agentpipe.execution.conversation import Message, ToolCall
+from agentpipe.models.http_session import HttpSession
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.tools.base import ToolDefinition
+from agentpipe.schema import Message, ToolCall, ToolDefinition
 
 
 class AnthropicModelProvider(ModelProvider):
@@ -27,7 +25,7 @@ class AnthropicModelProvider(ModelProvider):
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._default_params = default_params or {}
-        self._timeout = timeout
+        self._session = HttpSession(timeout=timeout)
 
     def _get_api_key(self) -> str:
         key = os.environ.get(self._api_key_env, "")
@@ -106,12 +104,7 @@ class AnthropicModelProvider(ModelProvider):
             "anthropic-version": "2023-06-01",
         }
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/v1/messages", json=payload, headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
+        data = await self._session.post_json(f"{self._base_url}/v1/messages", payload, headers)
 
         # Parse response content blocks
         content_text = ""

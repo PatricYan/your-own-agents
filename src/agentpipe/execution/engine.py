@@ -8,7 +8,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from agentpipe.core.condition import evaluate_condition
@@ -407,8 +407,6 @@ class DAGExecutor:
     def _persist_run(self, run: ExecutionRun) -> None:
         """Persist execution run to history store."""
         try:
-            from datetime import datetime
-
             run_data = {
                 "id": run.id,
                 "pipeline_name": run.pipeline_name,

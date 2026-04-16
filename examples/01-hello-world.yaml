@@ -10,8 +10,6 @@ execution_strategy: fail_fast
 
 tasks:
   - name: greet
-    goal: "Write a short, friendly greeting about the given topic. Call submit_result with your response."
+    goal: examples/goals/hello-world.md
     primary_model: default
-    permissions:
-      read: allow
     max_iterations: 3

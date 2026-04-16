@@ -224,3 +224,4 @@ web/frontend/.env.local
 .pre-commit-config.yaml
 .specify/
 specs/
+opencode.json

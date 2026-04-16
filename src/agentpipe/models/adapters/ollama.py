@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
-from agentpipe.execution.conversation import Message, ToolCall
+from agentpipe.models.http_session import HttpSession
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.tools.base import ToolDefinition
+from agentpipe.schema import Message, ToolCall, ToolDefinition
 
 
 class OllamaModelProvider(ModelProvider):
@@ -24,7 +22,7 @@ class OllamaModelProvider(ModelProvider):
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._default_params = default_params or {}
-        self._timeout = timeout
+        self._session = HttpSession(timeout=timeout)
 
     async def chat(
         self,
@@ -61,10 +59,9 @@ class OllamaModelProvider(ModelProvider):
         if tools:
             payload["tools"] = [t.to_openai_schema() for t in tools]
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(f"{self._base_url}/api/chat", json=payload)
-            response.raise_for_status()
-            data = response.json()
+        data = await self._session.post_json(
+            f"{self._base_url}/api/chat", payload, {"Content-Type": "application/json"}
+        )
 
         msg_data = data.get("message", {})
         content = msg_data.get("content", "")

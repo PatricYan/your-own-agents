@@ -11,44 +11,27 @@ execution_strategy: fail_fast
 
 tasks:
   - name: gather
-    goal: |
-      Read the project name from input. Prepare a brief description
-      of what needs to be analyzed. Submit as JSON.
+    goal: examples/goals/prepare-analysis.md
     primary_model: default
-    permissions:
-      read: allow
     max_iterations: 3
 
   - name: analyze-code
-    goal: |
-      Analyze the code quality aspects of the project described in the input.
-      Focus on structure, naming, and patterns. Submit findings as JSON.
+    goal: examples/goals/analyze-code-quality.md
     primary_model: default
-    permissions:
-      read: allow
-      glob: allow
-      grep: allow
+    permissions: examples/permissions/reviewer.yaml
     depends_on: gather
     max_iterations: 5
 
   - name: analyze-docs
-    goal: |
-      Analyze the documentation quality of the project described in the input.
-      Focus on completeness and clarity. Submit findings as JSON.
+    goal: examples/goals/analyze-docs.md
     primary_model: default
-    permissions:
-      read: allow
-      glob: allow
+    permissions: examples/permissions/reviewer.yaml
     depends_on: gather
     max_iterations: 5
 
   - name: report
-    goal: |
-      Combine the code analysis and documentation analysis from the input.
-      Write a final report with recommendations. Submit as JSON.
+    goal: examples/goals/combine-report.md
     primary_model: default
-    permissions:
-      read: allow
     depends_on:
       - analyze-code
       - analyze-docs

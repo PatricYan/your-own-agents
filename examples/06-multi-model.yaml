@@ -1,6 +1,5 @@
 # Example 6: Multi-Model Pipeline
 # Different agents use different models.
-# Register multiple models, then each task picks the best one for its job.
 #
 # Setup:
 #   agentpipe models register gpt-4o --provider openai --connection '{"api_key_env": "OPENAI_API_KEY", "model": "gpt-4o"}'
@@ -15,35 +14,21 @@ execution_strategy: fail_fast
 
 tasks:
   - name: plan
-    goal: |
-      Create a plan for the given task. Break it into steps.
-      Submit the plan as JSON.
+    goal: examples/goals/create-plan.md
     primary_model: gpt-4o
-    permissions:
-      read: allow
     max_iterations: 3
 
   - name: implement
-    goal: |
-      Follow the plan from the input. Write the implementation
-      to output/solution.py using the file_write tool.
-      Submit confirmation when done.
+    goal: examples/goals/implement-plan.md
     primary_model: claude
     fallback_models: [gpt-4o]
-    permissions:
-      read: allow
-      write: allow
+    permissions: examples/permissions/developer.yaml
     depends_on: plan
     max_iterations: 10
 
   - name: test
-    goal: |
-      Read output/solution.py and run it with
-      'python output/solution.py'. Report if it works.
-      Submit the test results.
+    goal: examples/goals/run-tests.md
     primary_model: gpt-4o
-    permissions:
-      read: allow
-      bash: allow
+    permissions: examples/permissions/tester.yaml
     depends_on: implement
     max_iterations: 5

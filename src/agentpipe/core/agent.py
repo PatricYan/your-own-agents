@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -73,18 +72,33 @@ class Agent(BaseModel):
         from agentpipe.models.adapters import create_provider
         from agentpipe.tools.registry import create_default_registry
 
-        # Build provider map
-        if providers is None:
-            providers = {}
-            for config in self.model_configs:
-                with contextlib.suppress(Exception):
-                    providers[config.name] = create_provider(config)
-
         # Build tool registry
         if tool_registry is None:
             tool_registry = create_default_registry(workspace=self.workspace)
 
-        runner = TaskRunner(providers, tool_registry, on_before_iteration=on_before_iteration)
+        if providers is not None:
+            # Backward compat: shared provider dict (not recommended)
+            runner = TaskRunner(
+                providers=providers,
+                tool_registry=tool_registry,
+                on_before_iteration=on_before_iteration,
+            )
+        else:
+            # Preferred: each task gets its own fresh provider instance
+            config_map = {c.name: c for c in self.model_configs}
+
+            def _provider_factory(model_name: str):
+                config = config_map.get(model_name)
+                if config is None:
+                    raise RuntimeError(f"No model config for '{model_name}'")
+                return create_provider(config)
+
+            runner = TaskRunner(
+                tool_registry=tool_registry,
+                on_before_iteration=on_before_iteration,
+                provider_factory=_provider_factory,
+            )
+
         recovery = RecoveryManager(runner)
         executor = DAGExecutor(runner, recovery, on_status_change=on_status_change)
 

@@ -13,47 +13,64 @@ conda activate agentpipe
 # Install git hooks + build frontend
 make post-setup
 
-# Verify
+# Verify everything works
 make check
 ```
 
 This gives you:
 - Python 3.11 + Node.js 20 in an isolated conda env (`agentpipe`)
-- All Python deps (pydantic, httpx, ruff, pytest, starlette, etc.)
-- Three commit gates enforced by pre-commit hooks (see below)
+- All Python deps installed via `pip install -e ".[dev]"` inside the conda env
+- Pre-commit hooks installed (5 gates enforced on every commit)
 - Built React frontend for the web UI
 
 ## Commit Gates
 
-Every `git commit` must pass three gates. They run automatically via pre-commit hooks — no commit goes through unless all three pass.
+Every `git commit` must pass **all** of the following. They run automatically via pre-commit hooks — no commit goes through unless every gate passes.
 
-### Gate 1: Code format check
+### Gate 1: Ruff lint
 
-Ruff lint and ruff format run on all staged Python files. Lint auto-fixes what it can. If unfixable issues remain or formatting is wrong, the commit is blocked.
+Runs `ruff check --fix` on all staged Python files. Auto-fixes what it can. If unfixable issues remain, the commit is blocked.
 
-### Gate 2: Unit tests must pass
+**Ruff rules enabled** (configured in `pyproject.toml`):
 
-`pytest tests/ --tb=short -q` runs on every commit. If any test fails, the commit is blocked. You cannot commit broken code.
+| Rule set | What it checks |
+|----------|---------------|
+| `E`, `W` | pycodestyle errors and warnings |
+| `F` | pyflakes (unused imports, undefined names) |
+| `I` | isort (import order) |
+| `N` | pep8-naming (function/class naming) |
+| `UP` | pyupgrade (Python 3.11+ syntax) |
+| `B` | flake8-bugbear (common bugs) |
+| `SIM` | flake8-simplify (code simplification) |
 
-### Gate 3: Commit message format
+Line length: **100 characters**.
 
-The commit message must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Bad messages are rejected:
+### Gate 2: Ruff format
 
-```
-$ git commit -m "fixed stuff"
-gate: conventional commit msg ... Failed
-```
+Runs `ruff format` on all staged Python files. Enforces consistent formatting (double quotes, 4-space indent, auto line endings).
 
-Good messages pass:
+### Gate 3: File hygiene
 
-```
-$ git commit -m "feat(core): add agent pipeline framework"
-gate: conventional commit msg ... Passed
-```
+| Check | What it does |
+|-------|-------------|
+| Trailing whitespace | Removes trailing spaces from all files |
+| End of file | Ensures files end with a newline |
+| YAML syntax | Validates all `.yaml`/`.yml` files |
+| JSON syntax | Validates all `.json` files |
+| Merge conflicts | Blocks commits containing conflict markers |
+| Debug statements | Blocks `print()`, `breakpoint()`, `pdb` in Python |
+
+### Gate 4: Unit tests
+
+Runs `pytest tests/ --tb=short -q`. If any test fails, the commit is blocked. You cannot commit broken code.
+
+### Gate 5: Commit message format
+
+The commit message must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Enforced by commitizen.
 
 ## Commit Messages
 
-All commits must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+Format:
 
 ```
 <type>(<scope>): <description>
@@ -63,7 +80,7 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 [optional footer]
 ```
 
-**Types:**
+### Types
 
 | Type | When to use |
 |------|-------------|
@@ -78,20 +95,25 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 | `ci` | CI/CD configuration |
 | `chore` | Maintenance, tooling |
 
-**Scope** (optional): the module affected — `core`, `execution`, `tools`, `models`, `cli`, `web`, `docs`
+### Scopes (optional)
 
-**Examples:**
+The module affected: `core`, `execution`, `tools`, `models`, `schema`, `cli`, `web`, `docs`
+
+### Examples
 
 ```
 feat(tools): add web_search tool
 fix(execution): handle timeout in agent loop
 docs: update tutorial with multi-model example
 refactor(core): simplify permission validation
-test(web): add API endpoint tests
-build: add pre-commit hooks
+test(schema): add conversation serialization tests
+build: update conda environment
+chore: remove dead code
 ```
 
-**Breaking changes** — add `!` after type or `BREAKING CHANGE:` in footer:
+### Breaking changes
+
+Add `!` after type or `BREAKING CHANGE:` in footer:
 
 ```
 feat(core)!: change models field from string to list
@@ -121,48 +143,48 @@ git checkout -b feat/my-feature
 # 2. Code
 # ... make changes ...
 
-# 3. Stage
+# 3. Verify locally before committing
+make lint                    # ruff check + fix
+make format                  # ruff format
+make test                    # pytest
+
+# 4. Stage
 git add -A
 
-# 4. Commit (hooks run automatically)
+# 5. Commit (all 5 gates run automatically)
 git commit -m "feat(core): add my feature"
 
-# 5. Push
+# 6. Push
 git push -u origin feat/my-feature
 
-# 6. Open PR on GitHub
+# 7. Open PR on GitHub
 ```
-
-The three commit gates run automatically on `git commit`:
-
-1. **Code format** — ruff lint + format (auto-fixes, blocks if unfixable)
-2. **Unit tests** — pytest must pass (blocks if any test fails)
-3. **Commit message** — conventional commits format required
-
-Plus file hygiene: trailing whitespace, YAML/JSON syntax, merge conflicts, large files (>500KB).
 
 If any gate fails, the commit is rejected. Fix the issue and commit again.
 
 ## Code Style
 
 - Python 3.11+
-- Ruff for lint and format (line length 100)
+- Ruff for lint and format (line length 100, double quotes, 4-space indent)
 - Type hints on all public functions
 - Pydantic models for data structures
 - `async def` for all I/O operations
+- Import shared types from `agentpipe.schema` (not from `execution/` or `tools/`)
 
-All enforced by pre-commit. No manual formatting needed.
+All enforced by pre-commit hooks. No manual formatting needed.
 
 ## Pull Requests
 
 Every PR must:
 
-- [ ] Follow the PR template (auto-loaded by GitHub)
-- [ ] Have conventional commit messages
-- [ ] Pass `ruff check src/` and `ruff format --check src/ tests/`
-- [ ] Pass `pytest`
+- [ ] Follow the [PR template](.github/pull_request_template.md)
+- [ ] Have all commits following [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format
+- [ ] Pass `ruff check src/ tests/` (no lint errors)
+- [ ] Pass `ruff format --check src/ tests/` (correctly formatted)
+- [ ] Pass `pytest` (all tests green)
 - [ ] Validate examples: `agentpipe pipelines validate examples/*.yaml`
-- [ ] Update docs if behavior changes
+- [ ] New code has tests
+- [ ] Documentation updated if behavior changes
 
 One PR = one logical change. Keep PRs focused.
 
@@ -170,18 +192,29 @@ One PR = one logical change. Keep PRs focused.
 
 ```
 src/agentpipe/
+  schema/          Shared types: Message, ToolCall, ToolDefinition (no deps)
   core/            task.py pipeline.py agent.py condition.py constraint.py visualize.py
-  execution/       agent_loop.py conversation.py engine.py runner.py recovery.py state.py
-  models/          provider.py registry.py adapters/{openai,anthropic,ollama,http}.py
+  execution/       agent_loop.py engine.py runner.py recovery.py state.py
+  models/          provider.py http_session.py registry.py adapters/{openai,anthropic,ollama,http}.py
   tools/           base.py registry.py builtin/{10 tools}
   storage/         definitions.py history.py
   loader/          yaml_loader.py json_loader.py
   web/             api.py state.py serve.py
   cli/             main.py run.py models.py pipelines.py status.py
 web/frontend/      React + React Flow
-examples/          Pipeline YAML files + goals/ + permissions/
-docs/              Tutorial and guides
-tests/             Test suite
+examples/          Pipeline YAML + goals/ + prompts/ + permissions/
+docs/              Tutorial
+tests/             214 tests across 13 files
+```
+
+**Dependency layers** (each only depends on layers below):
+
+```
+Layer 0: schema/              ← no dependencies
+Layer 1: tools/, models/, storage/  ← depend on schema/ only
+Layer 2: core/, loader/       ← depend on schema/ + core/
+Layer 3: execution/           ← depends on all above
+Layer 4: cli/, web/           ← top-level entry points
 ```
 
 ## Extending
@@ -190,17 +223,18 @@ tests/             Test suite
 
 1. `src/agentpipe/tools/builtin/my_tool.py` — implement `Tool` ABC
 2. `src/agentpipe/tools/registry.py` — register in `create_default_registry()`
-3. `src/agentpipe/core/task.py` — add permission field + `_TOOL_MAP` entry
-4. Test it
+3. `src/agentpipe/core/task.py` — add `_normalize()` mapping in `Permissions`
+4. Test in `tests/test_tools.py`
 
 ### Add a model adapter
 
-1. `src/agentpipe/models/adapters/my_provider.py` — implement `ModelProvider.chat()`
+1. `src/agentpipe/models/adapters/my_provider.py` — implement `ModelProvider.chat()`, use `HttpSession`
 2. `src/agentpipe/models/adapters/__init__.py` — add dispatch case
-3. Test it
+3. Import from `agentpipe.schema` (not from `execution/` or `tools/`)
+4. Test in `tests/test_model_contract.py`
 
 ### Add a CLI command
 
 1. `src/agentpipe/cli/my_command.py` — handler function
 2. `src/agentpipe/cli/main.py` — add subparser + dispatch
-3. Test it
+3. Test in `tests/test_tutorial.py` (CLI section)

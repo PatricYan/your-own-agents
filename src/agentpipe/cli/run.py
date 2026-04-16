@@ -56,17 +56,17 @@ class InteractiveController:
         print(f"  Goal: {task.goal}")
         print(f"  Model: {task.primary_model}")
         perms = task.permissions
-        print(
-            f"  Permissions: read={perms.file_read} write={perms.file_write} "
-            f"delete={perms.file_delete} shell={perms.shell} web={perms.web_fetch}"
+        perm_summary = ", ".join(
+            f"{k}={perms.get_level(k).value}" for k in ["read", "edit", "bash", "glob", "webfetch"]
         )
+        print(f"  Permissions: {perm_summary}")
         print()
         print("Commands:")
-        print("  r / resume      - Continue autonomous execution")
-        print("  p <perm> <on|off> - Toggle permission (e.g. 'p shell on')")
-        print("  g <new goal>    - Update the goal")
-        print("  s <new prompt>  - Update the system prompt")
-        print("  q / quit        - Abort the pipeline")
+        print("  r / resume          - Continue autonomous execution")
+        print("  p <key> <allow|deny> - Set permission (e.g. 'p bash allow')")
+        print("  g <new goal>        - Update the goal")
+        print("  s <new prompt>      - Update the system prompt")
+        print("  q / quit            - Abort the pipeline")
         print()
 
         updates: dict[str, Any] = {}
@@ -91,17 +91,19 @@ class InteractiveController:
                 parts = cmd.split(maxsplit=2)
                 if len(parts) == 3:
                     perm_name, value = parts[1], parts[2].lower()
-                    valid_perms = {"file_read", "file_write", "file_delete", "shell", "web_fetch"}
-                    if perm_name in valid_perms and value in ("on", "off", "true", "false"):
-                        bool_val = value in ("on", "true")
-                        perm_dict = task.permissions.model_dump()
-                        perm_dict[perm_name] = bool_val
-                        updates["permissions"] = Permissions(**perm_dict)
-                        print(f"  {perm_name} = {bool_val}")
+                    valid_perms = {"read", "edit", "bash", "glob", "grep", "list", "webfetch"}
+                    valid_levels = {"allow", "ask", "deny"}
+                    if perm_name in valid_perms and value in valid_levels:
+                        perm_dict = task.permissions.to_dict()
+                        perm_dict[perm_name] = value
+                        updates["permissions"] = Permissions(perm_dict)
+                        print(f"  {perm_name} = {value}")
                     else:
-                        print(f"  Invalid. Use: p <{'|'.join(valid_perms)}> <on|off>")
+                        print(
+                            f"  Invalid. Use: p <{'|'.join(sorted(valid_perms))}> <allow|ask|deny>"
+                        )
                 else:
-                    print("  Usage: p <permission> <on|off>")
+                    print("  Usage: p <permission> <allow|ask|deny>")
 
             elif cmd.startswith("g "):
                 new_goal = cmd[2:].strip()

@@ -1,10 +1,7 @@
-# Read-write permissions — agent can read and create files
+# Read-write — can read and modify files, no shell or network
+"*": deny
 read: allow
 edit: allow
-write: allow
-file_delete: deny
-bash: deny
 glob: allow
 grep: allow
 list: allow
-web_fetch: deny

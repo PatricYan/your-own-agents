@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
-
-from agentpipe.execution.conversation import Message
+from agentpipe.models.http_session import HttpSession
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.tools.base import ToolDefinition
+from agentpipe.schema import Message, ToolDefinition
 
 
 class HttpModelProvider(ModelProvider):
@@ -28,7 +26,7 @@ class HttpModelProvider(ModelProvider):
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._headers = headers or {"Content-Type": "application/json"}
-        self._timeout = timeout
+        self._session = HttpSession(timeout=timeout)
 
     async def chat(
         self,
@@ -46,10 +44,7 @@ class HttpModelProvider(ModelProvider):
         if parameters:
             payload.update(parameters)
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(self._base_url, json=payload, headers=self._headers)
-            response.raise_for_status()
-            data = response.json()
+        data = await self._session.post_json(self._base_url, payload, self._headers)
 
         # Extract content from common response formats
         content = ""

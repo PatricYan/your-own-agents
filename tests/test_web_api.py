@@ -90,5 +90,5 @@ class TestListEndpoints:
         node_b = next(n for n in nodes if n["id"] == "b")
         assert node_b["goal"] == "Do B"
         assert node_b["model"] == "test-model"
-        assert "read" in node_b["permissions"]
+        assert "*" in node_b["permissions"]  # default permissions use "*" key
         assert node_b["depends_on"] == ["a"]

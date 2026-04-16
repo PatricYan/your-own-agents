@@ -21,9 +21,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from agentpipe.core.task import TaskDefinition
-from agentpipe.execution.conversation import Conversation, ToolCall
+from agentpipe.core.task import PermissionLevel, TaskDefinition
 from agentpipe.models.provider import ModelProvider, StopReason
+from agentpipe.schema import Conversation, ToolCall
 from agentpipe.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,9 @@ class AgentLoopResult:
     iteration_log: list[IterationRecord] = field(default_factory=list)
     completed: bool = True
     error: str | None = None
+    total_tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 # ---- agent loop ----
@@ -109,6 +112,9 @@ class AgentLoop:
         conversation = Conversation()
         iteration_log: list[IterationRecord] = []
         total_tool_calls = 0
+        total_tokens = 0
+        prompt_tokens = 0
+        completion_tokens = 0
 
         # Build system prompt
         system = self._build_system_prompt(task, input_data)
@@ -149,6 +155,28 @@ class AgentLoop:
             allowed_tools = self._resolve_allowed_tools(task)
             tool_defs = self._tool_registry.get_definitions(list(allowed_tools))
 
+            # --- Token budget check: stop if total tokens exceed budget ---
+            if task.max_tokens and total_tokens >= task.max_tokens:
+                logger.warning(
+                    "Agent '%s' hit token budget (%d/%d) at iteration %d",
+                    task.name,
+                    total_tokens,
+                    task.max_tokens,
+                    iteration,
+                )
+                break
+
+            # --- Context window management: trim conversation if too large ---
+            if task.context_window:
+                trimmed = conversation.trim_to_budget(task.context_window)
+                if trimmed > 0:
+                    logger.info(
+                        "Agent '%s': trimmed %d messages to fit context window (%d tokens)",
+                        task.name,
+                        trimmed,
+                        task.context_window,
+                    )
+
             record = IterationRecord(iteration=iteration)
 
             # Think: send conversation to model
@@ -171,6 +199,12 @@ class AgentLoop:
             record.model_content = response.content
             record.stop_reason = response.stop_reason.value
 
+            # Track token usage
+            if response.usage:
+                total_tokens += response.usage.get("total_tokens", 0)
+                prompt_tokens += response.usage.get("prompt_tokens", 0)
+                completion_tokens += response.usage.get("completion_tokens", 0)
+
             # If model returned content without tool calls → done
             if response.stop_reason == StopReason.END_TURN and not response.tool_calls:
                 conversation.add_assistant(content=response.content)
@@ -184,6 +218,9 @@ class AgentLoop:
                     conversation=conversation,
                     iteration_log=iteration_log,
                     completed=True,
+                    total_tokens=total_tokens,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
                 )
 
             # Act: execute tool calls
@@ -198,7 +235,7 @@ class AgentLoop:
                         )
                         continue
 
-                    result_text = await self._execute_tool(tc, allowed_tools)
+                    result_text = await self._execute_tool(tc, allowed_tools, task.permissions)
                     conversation.add_tool_result(tc.id, result_text)
 
                     record.tool_calls.append({"name": tc.name, "arguments": tc.arguments})
@@ -222,6 +259,9 @@ class AgentLoop:
                                 conversation=conversation,
                                 iteration_log=iteration_log,
                                 completed=True,
+                                total_tokens=total_tokens,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
                             )
 
                 iteration_log.append(record)
@@ -233,8 +273,13 @@ class AgentLoop:
                 conversation.add_assistant(content=response.content)
                 iteration_log.append(record)
 
-        # Max iterations reached
-        logger.warning("Agent '%s' hit max iterations (%d)", task.name, task.max_iterations)
+        # Loop ended — either max_iterations or token budget
+        reason = (
+            "Max iterations"
+            if not (task.max_tokens and total_tokens >= task.max_tokens)
+            else "Token budget"
+        )
+        logger.warning("Agent '%s': %s reached", task.name, reason)
         last_content = ""
         for msg in reversed(conversation.messages):
             if msg.role == "assistant" and msg.content:
@@ -243,12 +288,15 @@ class AgentLoop:
 
         return AgentLoopResult(
             output=self._parse_final_output(last_content),
-            iterations=task.max_iterations,
+            iterations=len(iteration_log),
             total_tool_calls=total_tool_calls,
             conversation=conversation,
             iteration_log=iteration_log,
             completed=False,
-            error=f"Max iterations ({task.max_iterations}) reached",
+            error=f"{reason} reached",
+            total_tokens=total_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         )
 
     # ---- private helpers ----
@@ -290,24 +338,23 @@ class AgentLoop:
                 "with your final output. Be thorough and verify your work."
             )
 
-        # Inform the agent of its permissions (OpenCode-style)
+        # Inform the agent of its permissions (OpenCode format)
         perms = task.permissions
-        tool_perms = {
-            "read files": perms.read,
-            "edit files": perms.edit,
-            "write/create files": perms.write,
-            "delete files": perms.file_delete,
-            "execute shell commands": perms.bash,
-            "search files (glob)": perms.glob,
-            "search content (grep)": perms.grep,
-            "list directories": perms.list,
-            "fetch URLs": perms.web_fetch,
+        tool_descriptions = {
+            "read": "read files",
+            "edit": "edit/write/create files",
+            "bash": "execute shell commands",
+            "glob": "search files by pattern",
+            "grep": "search file contents",
+            "list": "list directories",
+            "webfetch": "fetch URLs from the web",
         }
         perm_lines = []
-        for desc, level in tool_perms.items():
-            if level.value == "allow":
+        for tool_key, desc in tool_descriptions.items():
+            level = perms.get_level(tool_key)
+            if level == PermissionLevel.ALLOW:
                 perm_lines.append(f"- You CAN {desc}")
-            elif level.value == "deny":
+            elif level == PermissionLevel.DENY:
                 perm_lines.append(f"- You CANNOT {desc}")
         if perm_lines:
             parts.append("## Your Permissions\n" + "\n".join(perm_lines))
@@ -329,10 +376,28 @@ class AgentLoop:
                 parts.append(f"## Input Data\n\n```json\n{formatted}\n```")
         return "\n\n".join(parts)
 
-    async def _execute_tool(self, tool_call: ToolCall, allowed_tools: set[str]) -> str:
-        """Execute a tool call, enforcing per-task permissions."""
+    async def _execute_tool(
+        self, tool_call: ToolCall, allowed_tools: set[str], permissions: Any
+    ) -> str:
+        """Execute a tool call, enforcing OpenCode-style permissions.
+
+        Checks both the tool-level allowed set AND granular pattern rules
+        (e.g., bash: {"git *": allow, "rm *": deny}).
+        """
         if tool_call.name not in allowed_tools:
             return f"Error: Tool '{tool_call.name}' is not permitted for this task"
+
+        # submit_result always bypasses granular checks (it's the completion signal)
+        if tool_call.name == "submit_result":
+            pass  # skip granular check
+        else:
+            # Granular check: extract the input value for pattern matching
+            input_value = self._get_tool_input_value(tool_call)
+            if permissions.is_denied(tool_call.name, input_value):
+                return (
+                    f"Error: '{tool_call.name}' with input '{input_value}' is denied by permissions"
+                )
+
         try:
             tool = self._tool_registry.get(tool_call.name)
             return await tool.execute(**tool_call.arguments)
@@ -340,6 +405,35 @@ class AgentLoop:
             return f"Error: Tool '{tool_call.name}' not found"
         except Exception as e:
             return f"Error executing tool '{tool_call.name}': {e}"
+
+    def _get_tool_input_value(self, tool_call: ToolCall) -> str:
+        """Extract the primary input value from a tool call for permission matching.
+
+        Maps tool names to their primary argument (like OpenCode):
+        - bash/shell: the command string
+        - read/edit/write/glob: the file path or pattern
+        - grep: the regex pattern
+        - webfetch: the URL
+        """
+        args = tool_call.arguments
+        name = tool_call.name
+        if name in ("shell", "bash"):
+            return args.get("command", "")
+        if name in ("file_read", "read"):
+            return args.get("path", "")
+        if name in ("edit",):
+            return args.get("file_path", "")
+        if name in ("file_write", "write"):
+            return args.get("path", "")
+        if name in ("file_delete",):
+            return args.get("path", "")
+        if name in ("glob",):
+            return args.get("pattern", "")
+        if name in ("grep",):
+            return args.get("pattern", "")
+        if name in ("web_fetch", "webfetch"):
+            return args.get("url", "")
+        return ""
 
     def _parse_final_output(self, content: str | None) -> dict[str, Any]:
         if not content:

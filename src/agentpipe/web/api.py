@@ -71,15 +71,7 @@ async def api_get_pipeline(request: Request) -> JSONResponse:
                 "id": task.name,
                 "goal": task.goal,
                 "model": task.primary_model,
-                "permissions": {
-                    "read": perms.read.value,
-                    "edit": perms.edit.value,
-                    "write": perms.write.value,
-                    "bash": perms.bash.value,
-                    "glob": perms.glob.value,
-                    "grep": perms.grep.value,
-                    "web_fetch": perms.web_fetch.value,
-                },
+                "permissions": perms.to_dict(),
                 "depends_on": task.depends_on,
                 "max_iterations": task.max_iterations,
                 "system_prompt": task.system_prompt,
@@ -253,7 +245,7 @@ async def api_update_task(request: Request) -> JSONResponse:
     if "permissions" in body:
         from agentpipe.core.task import Permissions
 
-        updates["permissions"] = Permissions(**body["permissions"])
+        updates["permissions"] = Permissions(body["permissions"])
     if "goal" in body:
         updates["goal"] = body["goal"]
     if "system_prompt" in body:
