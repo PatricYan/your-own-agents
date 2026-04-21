@@ -214,49 +214,49 @@ class DAGExecutor:
     ) -> bool:
         """Determine if a task should execute based on incoming edge conditions."""
         # Get all incoming edges for this task
-        incoming_edges = [e for e in pipeline.edges if e.target_task == task_name]
+        incoming_edges = [e for e in pipeline.edges if e.downstream == task_name]
 
         if not incoming_edges:
             return True  # Entry task, always execute
 
         # For a task to run, at least one incoming edge must be active
         for edge in incoming_edges:
-            source_record = run.task_records.get(edge.source_task)
-            if source_record is None or source_record.status != TaskStatus.COMPLETED:
-                continue  # Source not completed
+            up_record = run.task_records.get(edge.upstream)
+            if up_record is None or up_record.status != TaskStatus.COMPLETED:
+                continue  # Upstream not completed
 
             # If edge has no condition, it's active
             if edge.condition is None:
                 return True
 
-            # Evaluate condition against source task's output
-            source_output = task_outputs.get(edge.source_task, {})
-            if evaluate_condition(edge.condition, source_output):
+            # Evaluate condition against upstream task's output
+            up_output = task_outputs.get(edge.upstream, {})
+            if evaluate_condition(edge.condition, up_output):
                 return True
 
         # Check if all incoming edges have been processed
-        all_sources_done = all(
-            run.task_records.get(e.source_task, TaskExecutionRecord("")).status
+        all_done = all(
+            run.task_records.get(e.upstream, TaskExecutionRecord("")).status
             in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.SKIPPED)
             for e in incoming_edges
         )
 
-        return not all_sources_done  # True if some sources haven't finished yet
+        return not all_done  # True if some upstreams haven't finished yet
 
     def _mark_downstream_skipped(
         self, task_name: str, pipeline: Pipeline, skipped: set[str]
     ) -> None:
         """Mark all downstream tasks as skipped (cascade)."""
         for edge in pipeline.get_downstream_edges(task_name):
-            if edge.target_task not in skipped:
+            if edge.downstream not in skipped:
                 # Only skip if ALL incoming edges would be from skipped tasks
-                all_incoming = [e for e in pipeline.edges if e.target_task == edge.target_task]
+                all_incoming = [e for e in pipeline.edges if e.downstream == edge.downstream]
                 all_skipped = all(
-                    e.source_task in skipped or e.source_task == task_name for e in all_incoming
+                    e.upstream in skipped or e.upstream == task_name for e in all_incoming
                 )
                 if all_skipped:
-                    skipped.add(edge.target_task)
-                    self._mark_downstream_skipped(edge.target_task, pipeline, skipped)
+                    skipped.add(edge.downstream)
+                    self._mark_downstream_skipped(edge.downstream, pipeline, skipped)
 
     async def _execute_task(
         self,

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentpipe.common import Message, ToolCall, ToolDefinition
 from agentpipe.models.http_session import HttpSession
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.schema import Message, ToolCall, ToolDefinition
 
 
 class OllamaModelProvider(ModelProvider):
@@ -14,11 +14,15 @@ class OllamaModelProvider(ModelProvider):
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
+        base_url: str | None = None,
         model: str = "llama3",
         default_params: dict[str, Any] | None = None,
         timeout: float = 120.0,
     ) -> None:
+        if base_url is None:
+            from agentpipe import config
+
+            base_url = config.OLLAMA_BASE_URL
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._default_params = default_params or {}

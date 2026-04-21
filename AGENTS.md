@@ -13,7 +13,7 @@ src/
 ├── agentpipe/
 │   ├── __init__.py          # Package exports
 │   ├── __main__.py          # CLI entry point (python -m agentpipe)
-│   ├── schema/              # Shared data schemas (no business logic)
+│   ├── common/              # Shared data types (no business logic)
 │   │   ├── conversation.py  # Message, ToolCall, ToolResult, Conversation
 │   │   └── tool_schema.py   # ToolDefinition, ToolParameter
 │   ├── cli/
@@ -31,7 +31,7 @@ src/
 │   │   └── visualize.py     # ASCII and Mermaid DAG rendering
 │   ├── execution/
 │   │   ├── agent_loop.py    # Core think-act-observe agentic loop
-│   │   ├── conversation.py  # (shim: re-exports from schema/)
+│   │   ├── conversation.py  # (shim: re-exports from common/)
 │   │   ├── engine.py        # DAG executor (topological sort, async scheduling)
 │   │   ├── runner.py        # Task runner (delegates to agent loop)
 │   │   ├── recovery.py      # Three-tier recovery cascade
@@ -39,6 +39,7 @@ src/
 │   ├── models/
 │   │   ├── registry.py      # Model configuration and registry
 │   │   ├── provider.py      # Base ModelProvider (multi-turn + tool calling)
+│   │   ├── http_session.py  # Connection pooling + retry
 │   │   └── adapters/
 │   │       ├── __init__.py  # Adapter factory
 │   │       ├── openai.py    # OpenAI adapter (tool calling)
@@ -46,17 +47,26 @@ src/
 │   │       ├── ollama.py    # Ollama adapter
 │   │       └── http.py      # Generic HTTP adapter
 │   ├── tools/
-│   │   ├── base.py          # Tool ABC (imports ToolDefinition from schema/)
+│   │   ├── base.py          # Tool ABC (imports ToolDefinition from common/)
 │   │   ├── registry.py      # ToolRegistry + default factory
 │   │   └── builtin/
 │   │       ├── file_read.py
+│   │       ├── edit.py
 │   │       ├── file_write.py
+│   │       ├── file_delete.py
 │   │       ├── shell.py
+│   │       ├── glob.py
+│   │       ├── grep.py
+│   │       ├── list_dir.py
 │   │       ├── web_fetch.py
 │   │       └── submit_result.py
 │   ├── storage/
 │   │   ├── definitions.py   # YAML file storage for definitions
 │   │   └── history.py       # SQLite execution history
+│   ├── web/                  # REST API + WebSocket (Starlette)
+│   │   ├── api.py
+│   │   ├── state.py
+│   │   └── serve.py
 │   └── loader/
 │       ├── yaml_loader.py   # YAML pipeline loader
 │       └── json_loader.py   # JSON pipeline loader
@@ -82,7 +92,7 @@ tests/
 # Install (conda)
 conda env create -f environment.yml
 conda activate agentpipe
-make post-setup
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 
 # Lint
 ruff check src/
@@ -114,9 +124,11 @@ Python 3.11+: Follow standard conventions. Ruff configured with pycodestyle, pyf
 - **Pydantic models** for all domain entities (Agent, Pipeline, TaskDefinition, ModelConfig)
 - **Abstract base class** for ModelProvider (multi-turn chat + tool calling) and Tool
 - **Agent Loop** (think-act-observe cycle): model reasons, calls tools, observes results, iterates
+- **Skills as Markdown** — system_prompt files follow [karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills) pattern (Principles + Loop + Success Criteria)
+- **Per-purpose model routing** — `model_routing: {think: gpt-4o, tool_call: gpt-4o-mini}` per task
 - **Per-task tool permissions** enforced at execution time (not just definition time)
 - **Per-task provider isolation** — each task creates its own model provider (own HTTP session, own context)
-- **Shared schema/** — Message, ToolCall, ToolDefinition live in `schema/` so all modules can import without circular deps
+- **Shared common/** — Message, ToolCall, ToolDefinition live in `common/` so all modules can import without circular deps
 - **Token budget** (`max_tokens`) and **context window** (`context_window`) control per task
 - **Conversation trimming** — old messages automatically removed when context grows too large
 - **HTTP session reuse** within a task (connection pooling) + **retry with backoff** on transient errors

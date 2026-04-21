@@ -1,12 +1,13 @@
-"""Shared data schemas used across all modules.
+"""Backward-compat shim: types now live in agentpipe.common."""
 
-This package contains pure data classes with no business logic,
-so that any module (models, tools, execution, core) can import
-them without creating circular dependencies.
-"""
-
-from agentpipe.schema.conversation import Conversation, Message, ToolCall, ToolResult
-from agentpipe.schema.tool_schema import ToolDefinition, ToolParameter
+from agentpipe.common import (  # noqa: F401
+    Conversation,
+    Message,
+    ToolCall,
+    ToolDefinition,
+    ToolParameter,
+    ToolResult,
+)
 
 __all__ = [
     "Conversation",

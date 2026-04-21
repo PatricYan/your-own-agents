@@ -7,13 +7,13 @@ import json
 
 import pytest
 
+from agentpipe.common import ToolCall
 from agentpipe.core.pipeline import Pipeline
 from agentpipe.core.task import TaskDefinition
 from agentpipe.execution.engine import DAGExecutor
 from agentpipe.execution.recovery import RecoveryManager
 from agentpipe.execution.runner import TaskRunner
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.schema import ToolCall
 from agentpipe.tools.registry import create_default_registry
 
 
@@ -179,7 +179,7 @@ class TestModuleIndependence:
     """Test that each module can be used independently."""
 
     def test_schema_standalone(self):
-        from agentpipe.schema import Conversation
+        from agentpipe.common import Conversation
 
         c = Conversation()
         c.add_user("hello")

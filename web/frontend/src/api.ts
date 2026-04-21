@@ -1,7 +1,20 @@
-const BASE = process.env.REACT_APP_API_URL || 'http://localhost:8420';
+/**
+ * API client for AgentPipe backend.
+ *
+ * The frontend and backend are two separate services.
+ * They communicate only through the API.
+ *
+ * Configure the backend URL:
+ *   1. Set REACT_APP_API_URL in .env
+ *   2. Or set it as an environment variable before build/start
+ *
+ * Default: http://localhost:8420
+ */
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8420';
 
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
@@ -44,7 +57,7 @@ export const api = {
 };
 
 export function connectWS(onMessage: (event: any) => void): WebSocket {
-  const wsUrl = BASE.replace(/^http/, 'ws') + '/ws';
+  const wsUrl = API_URL.replace(/^http/, 'ws') + '/ws';
   const ws = new WebSocket(wsUrl);
   ws.onmessage = (e) => {
     try {
@@ -52,7 +65,6 @@ export function connectWS(onMessage: (event: any) => void): WebSocket {
     } catch {}
   };
   ws.onclose = () => {
-    // Auto-reconnect after 2 seconds
     setTimeout(() => connectWS(onMessage), 2000);
   };
   return ws;

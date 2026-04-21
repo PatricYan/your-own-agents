@@ -53,7 +53,7 @@ def create_provider(config: ModelConfig) -> ModelProvider:
         from agentpipe.models.adapters.ollama import OllamaModelProvider
 
         return OllamaModelProvider(
-            base_url=config.connection.get("base_url", "http://localhost:11434"),
+            base_url=config.connection.get("base_url"),  # falls back to OLLAMA_BASE_URL env var
             model=config.connection.get("model", "llama3"),
             default_params=config.parameters,
         )

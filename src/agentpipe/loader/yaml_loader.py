@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,63 @@ from agentpipe.core.condition import Condition, Edge
 from agentpipe.core.constraint import Constraint
 from agentpipe.core.pipeline import ExecutionStrategy, Pipeline
 from agentpipe.core.task import TaskDefinition
+from agentpipe.models.registry import ModelConfig, load_models_from_file, load_models_from_list
+
+
+@dataclass
+class PipelineConfig:
+    """Complete pipeline configuration including models.
+
+    Loaded from a single YAML file that contains both the pipeline
+    definition and model configurations.
+    """
+
+    pipeline: Pipeline
+    models: list[ModelConfig] = field(default_factory=list)
+
+
+def load_config_from_yaml(path: str | Path) -> PipelineConfig:
+    """Load a complete pipeline configuration (pipeline + models) from a YAML file.
+
+    The YAML file can define models in three ways:
+
+    1. Inline ``models`` list in the same file::
+
+        models:
+          - name: gpt-4o
+            provider: openai
+            connection: {api_key_env: OPENAI_API_KEY, model: gpt-4o}
+
+    2. Reference a separate models file::
+
+        models_file: examples/models.yaml
+
+    3. No models (for testing — models must be provided at runtime)
+
+    Args:
+        path: Path to the YAML file.
+
+    Returns:
+        PipelineConfig with pipeline and model configs.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Pipeline config file not found: {path}")
+
+    raw = yaml.safe_load(path.read_text())
+    pipeline = load_pipeline_from_dict(raw)
+
+    # Load models
+    models: list[ModelConfig] = []
+    if "models_file" in raw:
+        models_path = Path(raw["models_file"])
+        if not models_path.is_absolute():
+            models_path = path.parent / models_path
+        models = load_models_from_file(models_path)
+    elif "models" in raw and isinstance(raw["models"], list):
+        models = load_models_from_list(raw["models"])
+
+    return PipelineConfig(pipeline=pipeline, models=models)
 
 
 def load_pipeline_from_yaml(path: str | Path) -> Pipeline:
@@ -114,6 +172,7 @@ def _parse_tasks(
             models=raw_task.get("models", []),
             primary_model=raw_task.get("primary_model"),
             fallback_models=raw_task.get("fallback_models", []),
+            model_routing=raw_task.get("model_routing", {}),
             permissions=raw_perms,  # validator handles str/dict/Permissions
             tools=raw_task.get("tools", []),
             depends_on=raw_task.get("depends_on", []),
@@ -133,20 +192,25 @@ def _parse_tasks(
 
 
 def _parse_edges(raw_edges: list[dict[str, Any]]) -> list[Edge]:
-    """Parse edge definitions from raw YAML data."""
+    """Parse edge definitions from raw YAML data.
+
+    Accepts both new names (from/to/when) and old names (source/target/condition).
+    """
     edges = []
     for raw_edge in raw_edges:
+        # Accept: from/to (preferred) or source/target (backward compat)
+        upstream = raw_edge.get("from") or raw_edge.get("source", "")
+        downstream = raw_edge.get("to") or raw_edge.get("target", "")
+
+        # Accept: when (preferred) or condition (backward compat)
+        raw_cond = raw_edge.get("when") or raw_edge.get("condition")
         condition = None
-        if "condition" in raw_edge and raw_edge["condition"]:
-            raw_cond = raw_edge["condition"]
+        if raw_cond:
             condition = Condition(
                 expression=raw_cond.get("expression", ""),
                 description=raw_cond.get("description"),
             )
-        edge = Edge(
-            source_task=raw_edge["source"],
-            target_task=raw_edge["target"],
-            condition=condition,
-        )
+
+        edge = Edge(upstream=upstream, downstream=downstream, condition=condition)
         edges.append(edge)
     return edges

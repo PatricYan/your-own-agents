@@ -403,9 +403,7 @@ class TestDependencies:
                 TaskDefinition(name="c", goal="C", primary_model="m"),
             ],
             edges=[
-                Edge(
-                    source_task="a", target_task="c", condition=Condition(expression="score > 0.5")
-                ),
+                Edge(upstream="a", downstream="c", condition=Condition(expression="score > 0.5")),
             ],
         )
         assert len(p.edges) == 2  # 1 from depends_on + 1 explicit
@@ -598,13 +596,13 @@ class TestPipelineEngine:
             ],
             edges=[
                 Edge(
-                    source_task="evaluate",
-                    target_task="publish",
+                    upstream="evaluate",
+                    downstream="publish",
                     condition=Condition(expression="quality_score > 0.8"),
                 ),
                 Edge(
-                    source_task="evaluate",
-                    target_task="improve",
+                    upstream="evaluate",
+                    downstream="improve",
                     condition=Condition(expression="quality_score <= 0.8"),
                 ),
             ],
@@ -898,9 +896,9 @@ class TestCLI:
 
         parser = build_parser()
         args = parser.parse_args(
-            ["run", "my-agent", "--input", '{"x": 1}', "--watch", "--interactive"]
+            ["run", "my-pipeline.yaml", "--input", '{"x": 1}', "--watch", "--interactive"]
         )
-        assert args.agent_name == "my-agent"
+        assert args.pipeline == "my-pipeline.yaml"
         assert args.input_data == '{"x": 1}'
         assert args.watch is True
         assert args.interactive is True
@@ -1081,13 +1079,13 @@ class TestDAGVisualization:
             ],
             edges=[
                 Edge(
-                    source_task="eval",
-                    target_task="good",
+                    upstream="eval",
+                    downstream="good",
                     condition=Condition(expression="score > 0.8"),
                 ),
                 Edge(
-                    source_task="eval",
-                    target_task="bad",
+                    upstream="eval",
+                    downstream="bad",
                     condition=Condition(expression="score <= 0.8"),
                 ),
             ],
@@ -1144,7 +1142,7 @@ class TestDAGVisualization:
                 TaskDefinition(name="y", goal="Y", primary_model="m"),
             ],
             edges=[
-                Edge(source_task="x", target_task="y", condition=Condition(expression="ok == True"))
+                Edge(upstream="x", downstream="y", condition=Condition(expression="ok == True"))
             ],
         )
         output = p.render_dag("mermaid")

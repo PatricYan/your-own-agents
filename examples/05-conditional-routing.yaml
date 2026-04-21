@@ -3,11 +3,11 @@
 # execution routes to either the 'publish' or 'improve' agent.
 #
 # Run:
-#   agentpipe agents create quality-gate --pipeline examples/05-conditional-routing.yaml
-#   agentpipe run quality-gate --input '{"text": "AgentPipe is an Airflow-inspired agent framework."}' --watch
+#   agentpipe run examples/05-conditional-routing.yaml --input '{"text": "AgentPipe is an Airflow-inspired agent framework."}' --watch
 
 name: quality-gate
 execution_strategy: fail_fast
+models_file: examples/models.yaml
 
 tasks:
   - name: evaluate
@@ -26,11 +26,11 @@ tasks:
     max_iterations: 3
 
 edges:
-  - source: evaluate
-    target: publish
-    condition:
+  - from: evaluate
+    to: publish
+    when:
       expression: "quality_score > 0.7"
-  - source: evaluate
-    target: improve
-    condition:
+  - from: evaluate
+    to: improve
+    when:
       expression: "quality_score <= 0.7"

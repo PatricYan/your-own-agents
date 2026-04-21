@@ -1,0 +1,27 @@
+# AgentPipe
+#
+# cp .env.example .env
+# docker compose up
+
+services:
+  backend:
+    build: .
+    ports:
+      - "${AGENTPIPE_PORT:-8420}:${AGENTPIPE_PORT:-8420}"
+    env_file:
+      - .env
+    volumes:
+      - ./workspace:/app/workspace
+      - ./examples:/app/examples:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./web/frontend
+      args:
+        REACT_APP_API_URL: "${REACT_APP_API_URL:-http://localhost:8420}"
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

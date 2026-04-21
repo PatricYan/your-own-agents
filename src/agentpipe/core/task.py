@@ -226,9 +226,16 @@ class TaskDefinition(BaseModel):
     goal: str
     system_prompt: str | None = None
 
+    # Models — ordered list: first is primary, rest are fallbacks
     models: list[str] = Field(default_factory=list)
     primary_model: str | None = None
     fallback_models: list[str] = Field(default_factory=list)
+
+    # Per-purpose model routing (like OpenCode's model config)
+    # Allows different models for different sub-tasks within one agent.
+    # Keys are purpose names; values are model names from the models config.
+    # Example: {"think": "gpt-4o", "tool_call": "gpt-4o-mini", "summarize": "claude"}
+    model_routing: dict[str, str] = Field(default_factory=dict)
 
     permissions: Any = Field(default_factory=Permissions)
 

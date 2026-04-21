@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from agentpipe.schema import Message, ToolCall, ToolDefinition, ToolParameter
+from agentpipe.common import Message, ToolCall, ToolDefinition, ToolParameter
 
 # ============================================================
 # Local mock server simulating OpenAI chat completions API

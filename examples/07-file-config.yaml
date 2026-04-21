@@ -12,11 +12,11 @@
 #   examples/permissions/read-write.yaml    — read + edit + write
 #
 # Run:
-#   agentpipe agents create file-config --pipeline examples/07-file-config.yaml
-#   agentpipe run file-config --input '{"topic": "AI agents"}' --watch
+#   agentpipe run examples/07-file-config.yaml --input '{"topic": "AI agents"}' --watch
 
 name: file-configured-pipeline
 execution_strategy: fail_fast
+models_file: examples/models.yaml
 
 tasks:
   - name: researcher

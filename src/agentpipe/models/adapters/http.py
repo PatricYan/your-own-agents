@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agentpipe.common import Message, ToolDefinition
 from agentpipe.models.http_session import HttpSession
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.schema import Message, ToolDefinition
 
 
 class HttpModelProvider(ModelProvider):

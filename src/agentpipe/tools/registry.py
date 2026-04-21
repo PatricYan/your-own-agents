@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentpipe.schema import ToolDefinition
+from agentpipe.common import ToolDefinition
 from agentpipe.tools.base import Tool
 
 

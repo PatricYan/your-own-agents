@@ -49,25 +49,25 @@ class Pipeline(BaseModel):
             raise ValueError("Task names must be unique within a pipeline")
 
         # ---- Merge Airflow-style depends_on into edges ----
-        existing_pairs = {(e.source_task, e.target_task) for e in self.edges}
+        existing_pairs = {(e.upstream, e.downstream) for e in self.edges}
         for task in self.tasks:
-            for upstream in task.depends_on:
-                if upstream not in task_names:
+            for up in task.depends_on:
+                if up not in task_names:
                     raise ValueError(
-                        f"Task '{task.name}' depends_on '{upstream}' which is not in the pipeline"
+                        f"Task '{task.name}' depends_on '{up}' which is not in the pipeline"
                     )
-                if (upstream, task.name) not in existing_pairs:
-                    self.edges.append(Edge(source_task=upstream, target_task=task.name))
-                    existing_pairs.add((upstream, task.name))
+                if (up, task.name) not in existing_pairs:
+                    self.edges.append(Edge(upstream=up, downstream=task.name))
+                    existing_pairs.add((up, task.name))
 
         # ---- Standard edge validation ----
         for edge in self.edges:
-            if edge.source_task not in task_names:
-                raise ValueError(f"Edge source '{edge.source_task}' not found in tasks")
-            if edge.target_task not in task_names:
-                raise ValueError(f"Edge target '{edge.target_task}' not found in tasks")
-            if edge.source_task == edge.target_task:
-                raise ValueError(f"Self-loop detected on task '{edge.source_task}'")
+            if edge.upstream not in task_names:
+                raise ValueError(f"Edge upstream '{edge.upstream}' not found in tasks")
+            if edge.downstream not in task_names:
+                raise ValueError(f"Edge downstream '{edge.downstream}' not found in tasks")
+            if edge.upstream == edge.downstream:
+                raise ValueError(f"Self-loop detected on task '{edge.upstream}'")
 
         # Cycle detection
         if self.edges:
@@ -82,7 +82,7 @@ class Pipeline(BaseModel):
                     validate_expression(edge.condition.expression)
                 except ValueError as e:
                     raise ValueError(
-                        f"Invalid condition on edge {edge.source_task} -> {edge.target_task}: {e}"
+                        f"Invalid condition on edge {edge.upstream} -> {edge.downstream}: {e}"
                     ) from e
 
         return self
@@ -101,18 +101,18 @@ class Pipeline(BaseModel):
         raise KeyError(f"Task '{name}' not found in pipeline")
 
     def get_downstream_edges(self, task_name: str) -> list[Edge]:
-        return [e for e in self.edges if e.source_task == task_name]
+        return [e for e in self.edges if e.upstream == task_name]
 
     def get_upstream_tasks(self, task_name: str) -> list[str]:
-        return [e.source_task for e in self.edges if e.target_task == task_name]
+        return [e.upstream for e in self.edges if e.downstream == task_name]
 
     def get_entry_tasks(self) -> list[str]:
-        targets = {e.target_task for e in self.edges}
-        return [t.name for t in self.tasks if t.name not in targets]
+        downstreams = {e.downstream for e in self.edges}
+        return [t.name for t in self.tasks if t.name not in downstreams]
 
     def get_exit_tasks(self) -> list[str]:
-        sources = {e.source_task for e in self.edges}
-        return [t.name for t in self.tasks if t.name not in sources]
+        upstreams = {e.upstream for e in self.edges}
+        return [t.name for t in self.tasks if t.name not in upstreams]
 
     def render_dag(self, fmt: str = "ascii") -> str:
         """Render the pipeline DAG as a visual diagram.
@@ -139,8 +139,8 @@ def _detect_cycles(task_names: set[str], edges: list[Edge]) -> None:
     for name in task_names:
         in_degree[name] = 0
     for edge in edges:
-        adjacency[edge.source_task].append(edge.target_task)
-        in_degree[edge.target_task] += 1
+        adjacency[edge.upstream].append(edge.downstream)
+        in_degree[edge.downstream] += 1
     queue = deque(name for name in task_names if in_degree[name] == 0)
     visited_count = 0
     while queue:
@@ -160,8 +160,8 @@ def _topological_sort_levels(task_names: set[str], edges: list[Edge]) -> list[li
     for name in task_names:
         in_degree[name] = 0
     for edge in edges:
-        adjacency[edge.source_task].append(edge.target_task)
-        in_degree[edge.target_task] += 1
+        adjacency[edge.upstream].append(edge.downstream)
+        in_degree[edge.downstream] += 1
     levels: list[list[str]] = []
     current_level = sorted(name for name in task_names if in_degree[name] == 0)
     while current_level:

@@ -1,12 +1,17 @@
 # Example 1: Hello World
 # The simplest pipeline — one agent, one goal.
 #
-# Run:
-#   agentpipe agents create hello --pipeline examples/01-hello-world.yaml
-#   agentpipe run hello --input '{"topic": "quantum computing"}'
+# Run directly from the YAML file (no registration needed):
+#   agentpipe run examples/01-hello-world.yaml --input '{"topic": "quantum computing"}'
+#
+# Or with a separate models file:
+#   agentpipe run examples/01-hello-world.yaml --models examples/models.yaml --input '{"topic": "quantum computing"}'
 
 name: hello-world
 execution_strategy: fail_fast
+
+# Models can be defined inline or loaded from models_file
+models_file: examples/models.yaml
 
 tasks:
   - name: greet

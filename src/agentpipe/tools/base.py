@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from agentpipe.schema.tool_schema import ToolDefinition, ToolParameter
+from agentpipe.common.tool_schema import ToolDefinition, ToolParameter
 
 __all__ = ["Tool", "ToolDefinition", "ToolParameter"]
 

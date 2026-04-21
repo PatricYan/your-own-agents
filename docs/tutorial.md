@@ -13,65 +13,69 @@ This tutorial walks you through configuring, running, and verifying AgentPipe fr
 git clone https://github.com/your-org/your-own-agents.git
 cd your-own-agents
 
-# Create conda environment
+# Backend setup
 conda env create -f environment.yml
 conda activate agentpipe
-
-# Install hooks + build frontend
-make post-setup
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
 Verify:
 
 ```bash
 agentpipe --version
-# agentpipe 0.1.0
+ruff check src/
+pytest --tb=short
+```
 
-make check
-# All checks passed.
+For the frontend (separate service):
+
+```bash
+cd web/frontend
+npm install
 ```
 
 ## 2. Configure Your Model
 
-You need to register at least one model. Pick the provider you have access to.
+Edit `examples/models.yaml` and configure the model you have access to.
 
 ### Option A: OpenAI
 
 ```bash
 export OPENAI_API_KEY="sk-..."
-
-agentpipe models register default \
-  --provider openai \
-  --connection '{"api_key_env": "OPENAI_API_KEY", "model": "gpt-4o-mini"}'
 ```
+
+In `examples/models.yaml`, the `default` model is already configured for OpenAI.
 
 ### Option B: Anthropic
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
+```
 
-agentpipe models register default \
-  --provider anthropic \
-  --connection '{"api_key_env": "ANTHROPIC_API_KEY", "model": "claude-sonnet-4-20250514"}'
+Edit `examples/models.yaml` — change the `default` model to use anthropic:
+
+```yaml
+  - name: default
+    provider: anthropic
+    connection:
+      api_key_env: ANTHROPIC_API_KEY
+      model: claude-sonnet-4-20250514
 ```
 
 ### Option C: Ollama (local, free)
 
 ```bash
-# Install Ollama: https://ollama.ai
 ollama pull llama3
-
-agentpipe models register default \
-  --provider ollama \
-  --connection '{"base_url": "http://localhost:11434", "model": "llama3"}'
 ```
 
-Verify the model is registered:
+Edit `examples/models.yaml` — change the `default` model to use ollama:
 
-```bash
-agentpipe models list
-# Models:
-#   - default (openai) [active] capabilities: none
+```yaml
+  - name: default
+    provider: ollama
+    connection:
+      base_url: http://localhost:11434
+      model: llama3
 ```
 
 ## 3. Tutorial 1: Hello World (Single Agent)
@@ -87,8 +91,7 @@ agentpipe pipelines dag examples/01-hello-world.yaml
 **Create and run:**
 
 ```bash
-agentpipe agents create hello --pipeline examples/01-hello-world.yaml
-agentpipe run hello --input '{"topic": "quantum computing"}'
+agentpipe run examples/01-hello-world.yaml --input '{"topic": "quantum computing"}'
 ```
 
 **What to verify:**
@@ -118,8 +121,7 @@ You should see:
 **Create and run:**
 
 ```bash
-agentpipe agents create researcher --pipeline examples/02-sequential-pipeline.yaml
-agentpipe run researcher --input '{"topic": "benefits of open source software"}' --watch
+agentpipe run examples/02-sequential-pipeline.yaml --input '{"topic": "benefits of open source software"}' --watch
 ```
 
 **What to verify:**
@@ -162,8 +164,7 @@ You should see two tasks at the same level (parallel):
 **Create and run:**
 
 ```bash
-agentpipe agents create parallel-demo --pipeline examples/03-parallel-pipeline.yaml
-agentpipe run parallel-demo --input '{"project": "agentpipe"}' --watch
+agentpipe run examples/03-parallel-pipeline.yaml --input '{"project": "agentpipe"}' --watch
 ```
 
 **What to verify:**
@@ -185,8 +186,7 @@ agentpipe pipelines dag examples/04-permissions-demo.yaml
 **Create and run:**
 
 ```bash
-agentpipe agents create perms-demo --pipeline examples/04-permissions-demo.yaml
-agentpipe run perms-demo --input '{"file": "examples/04-permissions-demo.yaml"}' --watch
+agentpipe run examples/04-permissions-demo.yaml --input '{"file": "examples/04-permissions-demo.yaml"}' --watch
 ```
 
 **What to verify:**
@@ -219,8 +219,7 @@ You should see the condition labels on the edges:
 **Create and run:**
 
 ```bash
-agentpipe agents create quality-gate --pipeline examples/05-conditional-routing.yaml
-agentpipe run quality-gate --input '{"text": "AgentPipe is an Airflow-inspired agent framework."}' --watch
+agentpipe run examples/05-conditional-routing.yaml --input '{"text": "AgentPipe is an Airflow-inspired agent framework."}' --watch
 ```
 
 **What to verify:**
@@ -231,25 +230,19 @@ agentpipe run quality-gate --input '{"text": "AgentPipe is an Airflow-inspired a
 
 ## 8. Tutorial 6: Multi-Model Pipeline
 
-Different agents use different models. This requires registering two models.
+Different agents use different models. The models `gpt-4o` and `claude` are defined in `examples/models.yaml`.
 
-**Setup (requires two API keys):**
+**Setup:** Set both API keys:
 
 ```bash
-agentpipe models register gpt-4o \
-  --provider openai \
-  --connection '{"api_key_env": "OPENAI_API_KEY", "model": "gpt-4o"}'
-
-agentpipe models register claude \
-  --provider anthropic \
-  --connection '{"api_key_env": "ANTHROPIC_API_KEY", "model": "claude-sonnet-4-20250514"}'
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-**Create and run:**
+**Run:**
 
 ```bash
-agentpipe agents create multi-model --pipeline examples/06-multi-model.yaml
-agentpipe run multi-model --input '{"task": "write a sorting algorithm"}' --watch
+agentpipe run examples/06-multi-model.yaml --input '{"task": "write a sorting algorithm"}' --watch
 ```
 
 **What to verify:**
@@ -298,8 +291,7 @@ Reference them from any pipeline — share the same prompt or permission across 
 **Create and run (requires gpt-4o, claude, and local-llama registered):**
 
 ```bash
-agentpipe agents create file-config --pipeline examples/07-file-config.yaml
-agentpipe run file-config --input '{"topic": "AI agents"}' --watch
+agentpipe run examples/07-file-config.yaml --input '{"topic": "AI agents"}' --watch
 ```
 
 **What to verify:**
@@ -310,17 +302,23 @@ agentpipe run file-config --input '{"topic": "AI agents"}' --watch
 
 ## 10. Using the Web UI
 
-Start the web server:
+The backend and frontend are two separate services.
 
 ```bash
-# Build frontend (first time only)
-cd web/frontend && npm install && npm run build && cd ../..
+# Terminal 1: start the backend
+agentpipe serve --port 8420
 
-# Start server
-agentpipe serve
+# Terminal 2: start the frontend
+cd web/frontend
+npm install         # first time only
+npm start           # opens at http://0.0.0.0:3000
 ```
 
-Open `http://localhost:8420` in your browser.
+Configure the backend URL in `web/frontend/.env`:
+
+```
+REACT_APP_API_URL=http://localhost:8420
+```
 
 **What to try:**
 1. Select a pipeline from the dropdown (e.g., `researcher`)
@@ -329,7 +327,7 @@ Open `http://localhost:8420` in your browser.
 4. Click a node to see details (goal, model, permissions)
 5. While running, click **Pause**, edit a task's permissions or goal, then **Resume**
 
-## 10. Using the REST API
+## 11. Using the REST API
 
 All UI actions are available as API calls:
 
@@ -360,7 +358,7 @@ curl -X PATCH http://localhost:8420/api/runs/<run_id>/tasks/research \
 curl -X POST http://localhost:8420/api/runs/<run_id>/resume
 ```
 
-## 11. Using the Python API
+## 12. Using the Python API
 
 ```python
 import asyncio
@@ -404,12 +402,12 @@ result = asyncio.run(agent.execute({"topic": "AI agents"}))
 print(result)
 ```
 
-## 12. Interactive Mode (Interrupt and Modify)
+## 13. Interactive Mode (Interrupt and Modify)
 
 Run with `--interactive` to control the pipeline while it runs:
 
 ```bash
-agentpipe run researcher --input '{"topic": "AI"}' --interactive
+agentpipe run examples/02-sequential-pipeline.yaml --input '{"topic": "AI"}' --interactive
 ```
 
 Press **Ctrl+C** at any time to pause:
@@ -447,10 +445,10 @@ After you type `r`, the pipeline resumes autonomously with the updated settings.
 | 5. Conditional | Edge conditions, branch routing, task skipping |
 | 6. Multi-Model | Different models per task, fallback models |
 | 7. File Config | Goal from `.md` file, permissions from `.yaml` file, `models` list |
-| 8. Web UI | DAG visualization, live status, pause/resume, task editing |
-| 9. REST API | Programmatic control |
+| 8. Web UI | Backend API + frontend React app (two separate services) |
+| 9. REST API | Programmatic pipeline control |
 | 10. Python API | Library usage |
-| 11. Interactive | Ctrl+C interrupt, mid-run permission/goal changes |
+| 11. Interactive | Ctrl+C pause, modify permissions/goal/prompt mid-run |
 
 ## Token and Context Control
 
@@ -480,9 +478,13 @@ Each task in a pipeline runs in complete isolation:
 
 ## Troubleshooting
 
-**"Model provider not found"** — Register a model first:
+**"No models configured"** — Add a `models` or `models_file` section to your pipeline YAML:
+```yaml
+models_file: examples/models.yaml
+```
+Or use the `--models` flag:
 ```bash
-agentpipe models register default --provider openai --connection '{"api_key_env": "OPENAI_API_KEY", "model": "gpt-4o-mini"}'
+agentpipe run pipeline.yaml --models examples/models.yaml
 ```
 
 **"API key not found"** — Set your environment variable:
@@ -490,10 +492,7 @@ agentpipe models register default --provider openai --connection '{"api_key_env"
 export OPENAI_API_KEY="sk-..."
 ```
 
-**Agent runs but produces empty output** — Test the model directly:
-```bash
-agentpipe models test default --prompt "Say hello"
-```
+**Agent runs but produces empty output** — Check `examples/models.yaml` is configured correctly for your provider.
 
 **Task keeps looping** — Set `max_iterations` or `max_tokens` to limit the agent. Make the goal more specific so the agent knows when to call `submit_result`.
 

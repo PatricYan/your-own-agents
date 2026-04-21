@@ -2,26 +2,38 @@
 
 ## Setup
 
+### Backend
+
 ```bash
 git clone https://github.com/your-org/your-own-agents.git
 cd your-own-agents
 
-# Create isolated conda environment
+# Create conda environment
 conda env create -f environment.yml
 conda activate agentpipe
 
-# Install git hooks + build frontend
-make post-setup
+# Install git hooks
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 
-# Verify everything works
-make check
+# Verify
+agentpipe --version
+ruff check src/
+pytest --tb=short
+```
+
+### Frontend (separate service)
+
+```bash
+cd web/frontend
+npm install
+# Edit .env to set REACT_APP_API_URL
+npm start
 ```
 
 This gives you:
-- Python 3.11 + Node.js 20 in an isolated conda env (`agentpipe`)
-- All Python deps installed via `pip install -e ".[dev]"` inside the conda env
+- Python 3.11 in an isolated conda env (`agentpipe`) with all backend deps
 - Pre-commit hooks installed (5 gates enforced on every commit)
-- Built React frontend for the web UI
+- Frontend as a separate React app connecting to the backend via API
 
 ## Commit Gates
 
@@ -97,7 +109,7 @@ Format:
 
 ### Scopes (optional)
 
-The module affected: `core`, `execution`, `tools`, `models`, `schema`, `cli`, `web`, `docs`
+The module affected: `core`, `execution`, `tools`, `models`, `common`, `cli`, `web`, `docs`
 
 ### Examples
 
@@ -144,9 +156,9 @@ git checkout -b feat/my-feature
 # ... make changes ...
 
 # 3. Verify locally before committing
-make lint                    # ruff check + fix
-make format                  # ruff format
-make test                    # pytest
+ruff check src/ tests/ --fix   # lint + fix
+ruff format src/ tests/        # format
+pytest                         # tests
 
 # 4. Stage
 git add -A
@@ -169,7 +181,7 @@ If any gate fails, the commit is rejected. Fix the issue and commit again.
 - Type hints on all public functions
 - Pydantic models for data structures
 - `async def` for all I/O operations
-- Import shared types from `agentpipe.schema` (not from `execution/` or `tools/`)
+- Import shared types from `agentpipe.common` (not from `execution/` or `tools/`)
 
 All enforced by pre-commit hooks. No manual formatting needed.
 
@@ -192,7 +204,7 @@ One PR = one logical change. Keep PRs focused.
 
 ```
 src/agentpipe/
-  schema/          Shared types: Message, ToolCall, ToolDefinition (no deps)
+  common/          Shared types: Message, ToolCall, ToolDefinition (no deps)
   core/            task.py pipeline.py agent.py condition.py constraint.py visualize.py
   execution/       agent_loop.py engine.py runner.py recovery.py state.py
   models/          provider.py http_session.py registry.py adapters/{openai,anthropic,ollama,http}.py
@@ -204,15 +216,15 @@ src/agentpipe/
 web/frontend/      React + React Flow
 examples/          Pipeline YAML + goals/ + prompts/ + permissions/
 docs/              Tutorial
-tests/             214 tests across 13 files
+tests/             214 tests across 12 files
 ```
 
 **Dependency layers** (each only depends on layers below):
 
 ```
-Layer 0: schema/              ← no dependencies
-Layer 1: tools/, models/, storage/  ← depend on schema/ only
-Layer 2: core/, loader/       ← depend on schema/ + core/
+Layer 0: common/              ← no dependencies
+Layer 1: tools/, models/, storage/  ← depend on common/ only
+Layer 2: core/ ← self-contained; loader/ ← depends on core/ + models/
 Layer 3: execution/           ← depends on all above
 Layer 4: cli/, web/           ← top-level entry points
 ```
@@ -230,7 +242,7 @@ Layer 4: cli/, web/           ← top-level entry points
 
 1. `src/agentpipe/models/adapters/my_provider.py` — implement `ModelProvider.chat()`, use `HttpSession`
 2. `src/agentpipe/models/adapters/__init__.py` — add dispatch case
-3. Import from `agentpipe.schema` (not from `execution/` or `tools/`)
+3. Import from `agentpipe.common` (not from `execution/` or `tools/`)
 4. Test in `tests/test_model_contract.py`
 
 ### Add a CLI command

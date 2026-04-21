@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agentpipe.schema.conversation import Conversation, Message, ToolCall
+from agentpipe.common.conversation import Conversation, Message, ToolCall
 
 # ============================================================
 # 1. Conversation Window Management

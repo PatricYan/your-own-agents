@@ -48,8 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # --- run command ---
-    run_parser = subparsers.add_parser("run", help="Execute an agent's pipeline")
-    run_parser.add_argument("agent_name", help="Name of the agent to execute")
+    run_parser = subparsers.add_parser("run", help="Execute a pipeline")
+    run_parser.add_argument("pipeline", help="Pipeline YAML file or registered agent name")
+    run_parser.add_argument("--models", dest="models_file", help="Models config file (YAML)")
     run_parser.add_argument("--input", dest="input_data", help="JSON string of initial input")
     run_parser.add_argument("--input-file", help="Path to JSON/YAML input file")
     run_parser.add_argument("--watch", action="store_true", help="Stream execution status")
@@ -134,13 +135,12 @@ def build_parser() -> argparse.ArgumentParser:
     status_list.add_argument("--status", help="Filter by status")
 
     # --- serve command ---
-    serve_parser = subparsers.add_parser(
-        "serve", help="Start the web UI and API server (like Airflow/n8n)"
-    )
-    serve_parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
-    serve_parser.add_argument("--port", type=int, default=8420, help="Bind port (default: 8420)")
+    serve_parser = subparsers.add_parser("serve", help="Start the API server")
     serve_parser.add_argument(
-        "--static-dir", dest="static_dir", help="Path to React build directory"
+        "--host", default=None, help="Bind host (env: AGENTPIPE_HOST, default: 0.0.0.0)"
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=None, help="Bind port (env: AGENTPIPE_PORT, default: 8420)"
     )
 
     return parser

@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from agentpipe.common import ToolCall
 from agentpipe.core.condition import Condition, Edge
 from agentpipe.core.constraint import Constraint
 from agentpipe.core.pipeline import Pipeline
@@ -15,7 +16,6 @@ from agentpipe.execution.state import (
     validate_run_transition,
     validate_task_transition,
 )
-from agentpipe.schema import ToolCall
 
 # Reuse mock models from conftest
 from tests.conftest import FailingModelProvider as FailNTimesModel
@@ -232,13 +232,13 @@ class TestDAGExecutor:
             ],
             edges=[
                 Edge(
-                    source_task="eval",
-                    target_task="publish",
+                    upstream="eval",
+                    downstream="publish",
                     condition=Condition(expression="quality_score > 0.8"),
                 ),
                 Edge(
-                    source_task="eval",
-                    target_task="improve",
+                    upstream="eval",
+                    downstream="improve",
                     condition=Condition(expression="quality_score <= 0.8"),
                 ),
             ],

@@ -1,0 +1,83 @@
+# Example 8: Combined — depends_on + conditional edges + max_concurrency
+#
+# This pipeline demonstrates all dependency features together:
+#
+#   1. write-code and write-tests run in parallel after research (depends_on)
+#   2. evaluate runs after both complete (depends_on with list)
+#   3. evaluate routes to EITHER deploy OR fix-and-retry (conditional edges)
+#
+# DAG:
+#
+#                [research]
+#                /        \
+#       [write-code]  [write-tests]     ← parallel (depends_on)
+#                \        /
+#               [evaluate]
+#              /          \
+#       [deploy]      [fix-and-retry]   ← conditional (edges with when)
+#
+# Run:
+#   agentpipe run examples/08-combined.yaml --input '{"topic": "sorting algorithms"}' --watch
+
+name: combined-pipeline
+description: "Demonstrates depends_on + conditional edges together"
+execution_strategy: fail_fast
+max_concurrency: 2
+models_file: examples/models.yaml
+
+tasks:
+  - name: research
+    goal: examples/goals/research.md
+    system_prompt: examples/prompts/researcher.md
+    primary_model: default
+    permissions: examples/permissions/read-only.yaml
+    max_iterations: 5
+
+  - name: write-code
+    goal: examples/goals/write-implementation.md
+    primary_model: default
+    permissions: examples/permissions/developer.yaml
+    depends_on: research
+    max_iterations: 10
+
+  - name: write-tests
+    goal: examples/goals/write-tests.md
+    primary_model: default
+    permissions: examples/permissions/developer.yaml
+    depends_on: research
+    max_iterations: 10
+
+  - name: evaluate
+    goal: examples/goals/evaluate-and-score.md
+    primary_model: default
+    permissions: examples/permissions/reviewer.yaml
+    depends_on: [write-code, write-tests]
+    max_iterations: 5
+
+  - name: deploy
+    goal: examples/goals/deploy.md
+    primary_model: default
+    permissions:
+      "*": deny
+      read: allow
+      bash: allow
+    max_iterations: 3
+
+  - name: fix-and-retry
+    goal: examples/goals/fix-code.md
+    primary_model: default
+    permissions: examples/permissions/developer.yaml
+    max_iterations: 10
+
+# Conditional edges — evaluate routes based on quality score
+edges:
+  - from: evaluate
+    to: deploy
+    when:
+      expression: "quality_score > 0.8"
+      description: "Deploy if code quality is high enough"
+  - from: evaluate
+    to: fix-and-retry
+    when:
+      expression: "quality_score <= 0.8"
+      description: "Fix issues if quality is too low"

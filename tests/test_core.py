@@ -152,7 +152,7 @@ class TestPipeline:
                 TaskDefinition(name="b", goal="B", primary_model="m", depends_on="a"),
                 TaskDefinition(name="c", goal="C", primary_model="m"),
             ],
-            edges=[Edge(source_task="a", target_task="c", condition=Condition(expression="x > 1"))],
+            edges=[Edge(upstream="a", downstream="c", condition=Condition(expression="x > 1"))],
         )
         assert len(p.edges) == 2
 

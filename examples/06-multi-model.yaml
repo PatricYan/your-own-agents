@@ -1,16 +1,13 @@
 # Example 6: Multi-Model Pipeline
 # Different agents use different models.
-#
-# Setup:
-#   agentpipe models register gpt-4o --provider openai --connection '{"api_key_env": "OPENAI_API_KEY", "model": "gpt-4o"}'
-#   agentpipe models register claude --provider anthropic --connection '{"api_key_env": "ANTHROPIC_API_KEY", "model": "claude-sonnet-4-20250514"}'
+# Model names (gpt-4o, claude) are defined in models.yaml.
 #
 # Run:
-#   agentpipe agents create multi-model --pipeline examples/06-multi-model.yaml
-#   agentpipe run multi-model --input '{"task": "write a sorting algorithm"}' --watch
+#   agentpipe run examples/06-multi-model.yaml --input '{"task": "write a sorting algorithm"}' --watch
 
 name: multi-model-pipeline
 execution_strategy: fail_fast
+models_file: examples/models.yaml
 
 tasks:
   - name: plan

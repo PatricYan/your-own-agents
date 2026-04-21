@@ -36,34 +36,33 @@ class Condition(BaseModel):
 
 
 class Edge(BaseModel):
-    """A directed connection between two tasks in a pipeline."""
+    """A directed connection between two tasks in a pipeline.
 
-    source_task: str
-    target_task: str
+    In YAML::
+
+        edges:
+          - from: task-a
+            to: task-b
+            when:
+              expression: "score > 0.8"
+              description: "Only if quality is high"
+    """
+
+    upstream: str
+    downstream: str
     condition: Condition | None = None
 
 
 def validate_expression(expression: str) -> bool:
-    """Validate that an expression is parseable and safe.
-
-    Returns True if valid, raises ValueError if invalid.
-    """
+    """Validate that an expression is parseable and safe."""
     try:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as e:
         raise ValueError(f"Invalid condition expression: {e}") from e
 
-    # Walk the AST to check for unsafe operations
     for node in ast.walk(tree):
         if isinstance(node, ast.Import | ast.ImportFrom):
             raise ValueError("Import statements not allowed in conditions")
-        if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id not in _SAFE_BUILTINS:
-                # Allow calling safe builtins only
-                pass
-            elif isinstance(node.func, ast.Attribute):
-                # Allow method calls on data (e.g., output.get(...))
-                pass
 
     return True
 
@@ -72,15 +71,7 @@ def evaluate_condition(
     condition: Condition | Callable[..., bool],
     task_output: dict[str, Any],
 ) -> bool:
-    """Evaluate a condition against task output data.
-
-    Args:
-        condition: A Condition with an expression string, or a callable.
-        task_output: The task's output dictionary, available as variables.
-
-    Returns:
-        True if the condition is met, False otherwise.
-    """
+    """Evaluate a condition against task output data."""
     if callable(condition) and not isinstance(condition, Condition):
         return bool(condition(task_output))
 
@@ -91,11 +82,9 @@ def evaluate_condition(
     if not expression or not expression.strip():
         return True
 
-    # Build evaluation context from task output
     context: dict[str, Any] = {**_SAFE_BUILTINS}
-    context["__builtins__"] = {}  # Restrict builtins
+    context["__builtins__"] = {}
 
-    # Make task output fields available as variables
     if isinstance(task_output, dict):
         context.update(task_output)
 

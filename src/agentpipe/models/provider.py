@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from agentpipe.schema import Message, ToolCall, ToolDefinition
+from agentpipe.common import Message, ToolCall, ToolDefinition
 
 
 class StopReason(StrEnum):

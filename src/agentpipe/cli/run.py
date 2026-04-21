@@ -133,58 +133,83 @@ class InteractiveController:
 
 
 def cmd_run(args, workspace: Path, fmt: str) -> int:
-    """Execute the 'run' command."""
+    """Execute the 'run' command.
+
+    The pipeline argument can be:
+    1. A YAML file path — loads pipeline + models from the file
+    2. A registered agent name — loads from the workspace store (legacy)
+    """
     from agentpipe.core.agent import Agent
-    from agentpipe.models.adapters import create_provider
-    from agentpipe.models.registry import ModelConfig
-    from agentpipe.storage.definitions import DefinitionStore
+    from agentpipe.models.registry import ModelConfig, load_models_from_file
 
-    store = DefinitionStore(workspace)
-
-    # Load agent
-    try:
-        agent_data = store.load_agent(args.agent_name)
-    except FileNotFoundError:
-        error_output(ErrorCode.AGENT_NOT_FOUND, f"Agent '{args.agent_name}' not found", fmt=fmt)
-        return 2
+    pipeline_arg = args.pipeline
+    pipeline_path = Path(pipeline_arg)
 
     # Parse input
     input_data = _parse_input(args, fmt)
     if input_data is None:
         return 3
 
-    # Reconstruct agent model configs
-    model_configs = []
-    for mc_name in agent_data.get("model_configs", []):
-        try:
-            mc_data = store.load_model(mc_name)
-            model_configs.append(ModelConfig(**mc_data))
-        except FileNotFoundError:
-            error_output(ErrorCode.MODEL_NOT_FOUND, f"Model '{mc_name}' not found", fmt=fmt)
-            return 2
+    # Load pipeline and models
+    if pipeline_path.exists() and pipeline_path.suffix in (".yaml", ".yml", ".json"):
+        # Load from YAML file — self-contained, no registration needed
+        from agentpipe.loader.yaml_loader import load_config_from_yaml
 
-    # Build providers
-    providers: dict[str, Any] = {}
-    for mc in model_configs:
         try:
-            providers[mc.name] = create_provider(mc)
-        except Exception as e:
+            config = load_config_from_yaml(pipeline_path)
+        except (FileNotFoundError, ValueError) as e:
+            error_output(ErrorCode.PIPELINE_INVALID, str(e), fmt=fmt)
+            return 1
+
+        pipeline = config.pipeline
+        model_configs = config.models
+
+        # Also load from --models flag if provided
+        if getattr(args, "models_file", None):
+            try:
+                model_configs = load_models_from_file(args.models_file)
+            except (FileNotFoundError, ValueError) as e:
+                error_output(ErrorCode.MODEL_NOT_FOUND, str(e), fmt=fmt)
+                return 2
+
+        if not model_configs:
             error_output(
-                ErrorCode.MODEL_UNAVAILABLE, f"Cannot create provider for '{mc.name}': {e}", fmt=fmt
+                ErrorCode.MODEL_NOT_FOUND,
+                "No models configured. Add a 'models' section to the pipeline YAML "
+                "or use --models <file>",
+                fmt=fmt,
             )
             return 2
 
-    # Reconstruct pipeline from agent data
-    from agentpipe.loader.yaml_loader import load_pipeline_from_dict
+        agent = Agent(name=pipeline.name, pipeline=pipeline, model_configs=model_configs)
 
-    pipeline = load_pipeline_from_dict(agent_data.get("pipeline", {}))
+    else:
+        # Legacy: load from registered agent in workspace store
+        from agentpipe.loader.yaml_loader import load_pipeline_from_dict
+        from agentpipe.storage.definitions import DefinitionStore
 
-    # Build Agent
-    agent = Agent(
-        name=args.agent_name,
-        pipeline=pipeline,
-        model_configs=model_configs,
-    )
+        store = DefinitionStore(workspace)
+        try:
+            agent_data = store.load_agent(pipeline_arg)
+        except FileNotFoundError:
+            error_output(
+                ErrorCode.AGENT_NOT_FOUND,
+                f"'{pipeline_arg}' is not a YAML file and not a registered agent",
+                fmt=fmt,
+            )
+            return 2
+
+        model_configs = []
+        for mc_name in agent_data.get("model_configs", []):
+            try:
+                mc_data = store.load_model(mc_name)
+                model_configs.append(ModelConfig(**mc_data))
+            except FileNotFoundError:
+                error_output(ErrorCode.MODEL_NOT_FOUND, f"Model '{mc_name}' not found", fmt=fmt)
+                return 2
+
+        loaded_pipeline = load_pipeline_from_dict(agent_data.get("pipeline", {}))
+        agent = Agent(name=pipeline_arg, pipeline=loaded_pipeline, model_configs=model_configs)
 
     # Status callback for --watch mode
     watch = getattr(args, "watch", False)
@@ -229,12 +254,11 @@ def cmd_run(args, workspace: Path, fmt: str) -> int:
         print("Interactive mode: press Ctrl+C at any time to pause and modify the running agent.")
         print()
 
-    # Execute
+    # Execute (Agent.execute uses provider_factory by default — each task gets its own provider)
     try:
         result = asyncio.run(
             agent.execute(
                 input_data,
-                providers=providers,
                 on_status_change=on_status_change,
                 on_before_iteration=on_before_iteration,
             )

@@ -34,7 +34,7 @@ def render_ascii(pipeline: Pipeline) -> str:
         label = ""
         if edge.condition and edge.condition.expression:
             label = f"[if {edge.condition.expression}]"
-        edge_labels[(edge.source_task, edge.target_task)] = label
+        edge_labels[(edge.upstream, edge.downstream)] = label
 
     lines: list[str] = []
 
@@ -129,8 +129,8 @@ def render_mermaid(pipeline: Pipeline) -> str:
 
     # Edges
     for edge in pipeline.edges:
-        src = _safe_id(edge.source_task)
-        tgt = _safe_id(edge.target_task)
+        src = _safe_id(edge.upstream)
+        tgt = _safe_id(edge.downstream)
         if edge.condition and edge.condition.expression:
             label = edge.condition.expression.replace('"', "'")
             lines.append(f'    {src} -->|"{label}"| {tgt}')

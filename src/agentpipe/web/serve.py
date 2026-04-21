@@ -1,4 +1,4 @@
-"""CLI handler for 'agentpipe serve' — starts the web UI and API server."""
+"""Start the API server. Configuration from agentpipe.config (env vars)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def cmd_serve(args, workspace: Path, fmt: str) -> int:
-    """Start the web server."""
+    """Start the API server."""
     try:
         import uvicorn
     except ImportError:
@@ -18,34 +18,22 @@ def cmd_serve(args, workspace: Path, fmt: str) -> int:
         )
         return 1
 
+    from agentpipe import config
     from agentpipe.web.api import create_app
 
-    host = getattr(args, "host", "0.0.0.0")
-    port = getattr(args, "port", 8420)
-    static_dir = getattr(args, "static_dir", None)
+    # CLI flags override config (which reads from env vars)
+    host = getattr(args, "host", None) or config.HOST
+    port = getattr(args, "port", None) or config.PORT
+    log_level = config.LOG_LEVEL
 
-    # Try to find the React build
-    if static_dir is None:
-        candidates = [
-            Path(__file__).parent.parent.parent.parent / "web" / "frontend" / "build",
-            workspace / "web" / "frontend" / "build",
-        ]
-        for c in candidates:
-            if c.exists():
-                static_dir = str(c)
-                break
+    app = create_app(workspace=str(workspace))
 
-    app = create_app(workspace=str(workspace), static_dir=static_dir)
-
-    print(f"AgentPipe server starting on http://{host}:{port}")
+    print("AgentPipe API server")
+    print(f"  Host:      {host}:{port}")
     print(f"  API:       http://{host}:{port}/api/pipelines")
     print(f"  WebSocket: ws://{host}:{port}/ws")
-    if static_dir:
-        print(f"  UI:        http://{host}:{port}/")
-    else:
-        print("  UI:        Not built. Run: cd web/frontend && npm run build")
     print(f"  Workspace: {workspace}")
     print()
 
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level=log_level)
     return 0

@@ -3,11 +3,11 @@
 # This demonstrates fan-out / fan-in like Airflow.
 #
 # Run:
-#   agentpipe agents create parallel-demo --pipeline examples/03-parallel-pipeline.yaml
-#   agentpipe run parallel-demo --input '{"project": "agentpipe"}' --watch
+#   agentpipe run examples/03-parallel-pipeline.yaml --input '{"project": "agentpipe"}' --watch
 
 name: parallel-analysis
 execution_strategy: fail_fast
+models_file: examples/models.yaml
 
 tasks:
   - name: gather

@@ -21,9 +21,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from agentpipe.common import Conversation, ToolCall
 from agentpipe.core.task import PermissionLevel, TaskDefinition
 from agentpipe.models.provider import ModelProvider, StopReason
-from agentpipe.schema import Conversation, ToolCall
 from agentpipe.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)

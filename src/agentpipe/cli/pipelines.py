@@ -158,9 +158,12 @@ def _agents_inspect(args, workspace: Path, fmt: str) -> int:
         print(f"  Edges ({len(edges)}):")
         for e in edges:
             cond = ""
-            if e.get("condition"):
-                cond = f" [if {e['condition'].get('expression', '')}]"
-            print(f"    {e.get('source', '?')} -> {e.get('target', '?')}{cond}")
+            if e.get("condition") or e.get("when"):
+                raw_cond = e.get("when") or e.get("condition", {})
+                cond = f" [if {raw_cond.get('expression', '')}]"
+            print(
+                f"    {e.get('from', e.get('source', '?'))} -> {e.get('to', e.get('target', '?'))}{cond}"
+            )
         print(f"  Models: {', '.join(data.get('model_configs', []))}")
 
     return 0

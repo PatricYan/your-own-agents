@@ -213,15 +213,21 @@ Thumbs.db
 # Agentpipe workspace data
 .agentpipe/
 output/
+workspace/
+
+# Environment files (contain secrets)
+.env
+.env.local
+!.env.example
 
 # Frontend
 node_modules/
 web/frontend/build/
 web/frontend/.env.local
 
-.github/
-.opencode/
+.github
+.opencode
 .pre-commit-config.yaml
-.specify/
-specs/
+.specify
+specs
 opencode.json

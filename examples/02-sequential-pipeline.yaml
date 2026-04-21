@@ -3,11 +3,11 @@
 # The output of the first agent flows as input to the second.
 #
 # Run:
-#   agentpipe agents create researcher --pipeline examples/02-sequential-pipeline.yaml
-#   agentpipe run researcher --input '{"topic": "benefits of open source software"}' --watch
+#   agentpipe run examples/02-sequential-pipeline.yaml --input '{"topic": "benefits of open source software"}' --watch
 
 name: research-and-summarize
 execution_strategy: fail_fast
+models_file: examples/models.yaml
 
 tasks:
   - name: research

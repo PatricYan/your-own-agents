@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from agentpipe.common import Message, ToolCall, ToolDefinition
 from agentpipe.models.http_session import HttpSession
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.schema import Message, ToolCall, ToolDefinition
 
 
 class AnthropicModelProvider(ModelProvider):

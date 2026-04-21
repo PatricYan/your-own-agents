@@ -1,0 +1,52 @@
+# Example 9: Per-Purpose Model Routing
+#
+# Different models for different purposes within a single agent.
+# Like OpenCode uses gpt-4o for reasoning and gpt-4o-mini for tool calls.
+#
+# model_routing lets you assign models by purpose:
+#   think:     the model used for reasoning and planning
+#   tool_call: a faster/cheaper model for routine tool operations
+#   summarize: a model good at synthesis
+#
+# The primary_model is the default. model_routing overrides it for specific purposes.
+#
+# Run:
+#   agentpipe run examples/09-model-routing.yaml --input '{"topic": "sorting algorithms"}'
+
+name: model-routing-demo
+execution_strategy: fail_fast
+models_file: examples/models.yaml
+
+tasks:
+  - name: research
+    goal: examples/goals/research.md
+    system_prompt: examples/prompts/researcher.md
+    primary_model: gpt-4o
+    model_routing:
+      think: gpt-4o          # use the best model for reasoning
+      tool_call: local-llama  # use a fast local model for file reads/searches
+    permissions:
+      "*": deny
+      read: allow
+      glob: allow
+      grep: allow
+    max_iterations: 10
+
+  - name: implement
+    goal: examples/goals/write-implementation.md
+    system_prompt: examples/prompts/code-fixer.md
+    primary_model: claude
+    model_routing:
+      think: claude           # Claude for code generation
+      tool_call: gpt-4o       # GPT-4o for running tests
+    permissions: examples/permissions/developer.yaml
+    depends_on: research
+    max_iterations: 15
+
+  - name: review
+    goal: examples/goals/review-code.md
+    system_prompt: examples/prompts/code-reviewer.md
+    primary_model: gpt-4o
+    permissions: examples/permissions/reviewer.yaml
+    depends_on: implement
+    max_iterations: 5

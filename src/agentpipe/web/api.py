@@ -12,8 +12,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route, WebSocketRoute
-from starlette.staticfiles import StaticFiles
+from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket
 
 from agentpipe.web.state import ServerState
@@ -80,7 +79,7 @@ async def api_get_pipeline(request: Request) -> JSONResponse:
 
     edges = []
     for edge in pipeline.edges:
-        e: dict[str, Any] = {"source": edge.source_task, "target": edge.target_task}
+        e: dict[str, Any] = {"from": edge.upstream, "to": edge.downstream}
         if edge.condition:
             e["condition"] = edge.condition.expression
         edges.append(e)
@@ -303,8 +302,11 @@ async def ws_events(websocket: WebSocket) -> None:
 # ============================================================
 
 
-def create_app(workspace: str = ".", static_dir: str | None = None) -> Starlette:
-    """Create the Starlette ASGI application."""
+def create_app(workspace: str = ".") -> Starlette:
+    """Create the Starlette ASGI application.
+
+    This is a pure API server. The frontend is a separate service.
+    """
     global _workspace
     _workspace = Path(workspace).resolve()
 
@@ -320,12 +322,6 @@ def create_app(workspace: str = ".", static_dir: str | None = None) -> Starlette
         Route("/api/models", api_list_models),
         WebSocketRoute("/ws", ws_events),
     ]
-
-    # Serve React build if available
-    if static_dir:
-        static_path = Path(static_dir)
-        if static_path.exists():
-            routes.append(Mount("/", app=StaticFiles(directory=str(static_path), html=True)))
 
     middleware = [
         Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),

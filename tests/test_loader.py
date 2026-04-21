@@ -87,7 +87,7 @@ tasks:
         import glob as g
         from pathlib import Path
 
-        for f in sorted(g.glob("examples/*.yaml")):
+        for f in sorted(g.glob("examples/0*.yaml")):  # 01-08 only, skip models.yaml
             p = load_pipeline_from_yaml(Path(f))
             assert p.name, f"Pipeline in {f} has no name"
             assert len(p.tasks) > 0, f"Pipeline in {f} has no tasks"

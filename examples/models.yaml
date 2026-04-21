@@ -1,0 +1,32 @@
+# Model configuration file
+#
+# Define all your models here. Pipelines reference models by name.
+# Load with: agentpipe serve --models examples/models.yaml
+# Or reference from pipeline YAML: models_file: examples/models.yaml
+#
+# Environment variables in api_key_env are read at runtime.
+
+models:
+  - name: default
+    provider: openai
+    connection:
+      api_key_env: OPENAI_API_KEY
+      model: gpt-4o-mini
+
+  - name: gpt-4o
+    provider: openai
+    connection:
+      api_key_env: OPENAI_API_KEY
+      model: gpt-4o
+
+  - name: claude
+    provider: anthropic
+    connection:
+      api_key_env: ANTHROPIC_API_KEY
+      model: claude-sonnet-4-20250514
+
+  - name: local-llama
+    provider: ollama
+    connection:
+      base_url: http://localhost:11434
+      model: llama3
