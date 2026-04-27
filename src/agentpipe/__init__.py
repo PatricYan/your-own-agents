@@ -1,8 +1,4 @@
-"""AgentPipe: Build your own autonomous agent pipelines.
-
-An Airflow-inspired framework where each task is an autonomous agent
-with a model brain and tools, connected in a DAG pipeline.
-"""
+"""AgentPipe: Build your own agent pipelines."""
 
 __version__ = "0.1.0"
 
@@ -12,7 +8,7 @@ from agentpipe.core.constraint import Constraint, ConstraintType, ViolationActio
 from agentpipe.core.pipeline import ExecutionStrategy, Pipeline
 from agentpipe.core.task import Permissions, TaskDefinition
 from agentpipe.models.provider import ModelProvider, ModelResponse, StopReason
-from agentpipe.models.registry import ModelConfig, ModelRegistry
+from agentpipe.models.registry import ModelConfig
 from agentpipe.tools.base import Tool, ToolDefinition, ToolParameter
 
 __all__ = [
@@ -24,7 +20,6 @@ __all__ = [
     "ExecutionStrategy",
     "ModelConfig",
     "ModelProvider",
-    "ModelRegistry",
     "ModelResponse",
     "Permissions",
     "Pipeline",

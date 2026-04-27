@@ -42,6 +42,7 @@ class ModelProvider(ABC):
         messages: list[Message],
         tools: list[ToolDefinition] | None = None,
         parameters: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> ModelResponse:
         """Send a conversation to the model and return the response.
 

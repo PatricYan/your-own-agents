@@ -1,32 +1,53 @@
-# Model configuration file
+# Models configuration
 #
-# Define all your models here. Pipelines reference models by name.
-# Load with: agentpipe serve --models examples/models.yaml
-# Or reference from pipeline YAML: models_file: examples/models.yaml
+# api_key: your actual API key
+# base_url: provider API endpoint (full URL)
+# model: model name
 #
-# Environment variables in api_key_env are read at runtime.
 
 models:
+  # --- OpenAI ---
   - name: default
     provider: openai
     connection:
-      api_key_env: OPENAI_API_KEY
+      api_key: sk-your-key-here
+      base_url: https://api.openai.com/v1/chat/completions
       model: gpt-4o-mini
 
-  - name: gpt-4o
-    provider: openai
-    connection:
-      api_key_env: OPENAI_API_KEY
-      model: gpt-4o
-
-  - name: claude
+  # --- Anthropic ---
+  - name: default
     provider: anthropic
     connection:
-      api_key_env: ANTHROPIC_API_KEY
-      model: claude-sonnet-4-20250514
+      api_key: sk-ant-your-key-here
+      base_url: https://api.anthropic.com/v1/messages
+      model: claude-sonnet
 
-  - name: local-llama
+  # --- Microsoft Foundry (Anthropic) ---
+  - name: default
+    provider: microsoft-foundry-anthropic
+    connection:
+      api_key: your-foundry-key
+      base_url: https://your-resource.services.ai.azure.com/anthropic/v1/messages
+      model: claude-haiku
+
+  # --- Microsoft Foundry (OpenAI) ---
+  - name: gpt
+    provider: microsoft-foundry-openai
+    connection:
+      api_key: your-foundry-key
+      base_url: https://your-resource.cognitiveservices.azure.com/openai/v1/chat/completions
+      model: gpt-4o
+
+  # --- Ollama (local, no api_key needed) ---
+  - name: local
     provider: ollama
     connection:
-      base_url: http://localhost:11434
+      base_url: http://localhost:11434/api/chat
       model: llama3
+
+  # Placeholder — uncomment your provider above and remove this
+  # - name: default
+  #   provider: http
+  #   connection:
+  #     base_url: http://localhost:8080
+  #     model: placeholder

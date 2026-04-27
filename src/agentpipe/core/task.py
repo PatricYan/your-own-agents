@@ -24,14 +24,33 @@ class PermissionLevel(StrEnum):
 # Default permissions — read-only. Tasks can only read and search
 # by default. Edit, write, delete, shell, network are all denied.
 # You must explicitly grant permissions for anything destructive.
-_DEFAULTS: dict[str, Any] = {
-    "*": "deny",
-    "read": "allow",
-    "glob": "allow",
-    "grep": "allow",
-    "list": "allow",
-    "submit_result": "allow",
-}
+def _load_default_permissions() -> dict[str, Any]:
+    """Load default permissions from AGENTPIPE_PERMISSIONS env var."""
+    from agentpipe import config
+
+    if config.get("AGENTPIPE_PERMISSIONS"):
+        perms_path = Path(config.get("AGENTPIPE_PERMISSIONS"))
+        if perms_path.exists():
+            import json
+
+            import yaml
+
+            raw = (
+                yaml.safe_load(perms_path.read_text())
+                if perms_path.suffix != ".json"
+                else json.loads(perms_path.read_text())
+            )
+            if isinstance(raw, dict):
+                return raw
+    # Fallback if no file is set
+    return {
+        "*": "deny",
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "submit_result": "allow",
+    }
 
 
 class Permissions:
@@ -65,7 +84,7 @@ class Permissions:
 
     def __init__(self, rules: dict[str, Any] | str | None = None) -> None:
         if rules is None or (isinstance(rules, dict) and not rules):
-            rules = dict(_DEFAULTS)
+            rules = _load_default_permissions()
         elif isinstance(rules, str):
             # "allow" / "ask" / "deny" — set everything to one level
             rules = {"*": rules}
@@ -224,6 +243,14 @@ class TaskDefinition(BaseModel):
     name: str
 
     goal: str
+
+    # Prompts that control the agent's behavior.
+    # Each entry is a file path (.md, .txt, .prompt) or inline text.
+    # Multiple prompts are concatenated into the system prompt.
+    # Example: prompts: [prompts/principles.md, prompts/code-reviewer.md]
+    prompts: list[str] = Field(default_factory=list)
+
+    # Legacy: single system_prompt (still works, merged into prompts)
     system_prompt: str | None = None
 
     # Models — ordered list: first is primary, rest are fallbacks
@@ -279,6 +306,15 @@ class TaskDefinition(BaseModel):
             return "Execute sub-pipeline"
         raise ValueError("Task must have a goal")
 
+    @field_validator("prompts", mode="before")
+    @classmethod
+    def validate_prompts(cls, v: list[str] | str | None) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [v]
+        return [load_text_or_file(p) for p in v if p and p.strip()]
+
     @field_validator("system_prompt", mode="before")
     @classmethod
     def validate_system_prompt(cls, v: str | None) -> str | None:
@@ -317,3 +353,16 @@ class TaskDefinition(BaseModel):
         if self.tools:
             return self.tools
         return self.permissions.allowed_tool_names()
+
+    def effective_system_prompt(self) -> str | None:
+        """Build the combined system prompt from prompts list + system_prompt.
+
+        Priority: prompts list (concatenated) > system_prompt.
+        If both exist, prompts list comes first, system_prompt appended.
+        """
+        parts = []
+        if self.prompts:
+            parts.extend(self.prompts)
+        if self.system_prompt:
+            parts.append(self.system_prompt)
+        return "\n\n".join(parts) if parts else None

@@ -1,7 +1,8 @@
 # AgentPipe
 #
-# cp .env.example .env
-# docker compose up
+# Both:          docker compose up
+# Backend only:  docker compose up backend
+# Frontend only: docker compose up frontend
 
 services:
   backend:
@@ -22,6 +23,4 @@ services:
         REACT_APP_API_URL: "${REACT_APP_API_URL:-http://localhost:8420}"
     ports:
       - "3000:80"
-    depends_on:
-      - backend
     restart: unless-stopped

@@ -1,39 +1,43 @@
-"""Start the API server. Configuration from agentpipe.config (env vars)."""
+"""Start the API server."""
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
 
 def cmd_serve(args, workspace: Path, fmt: str) -> int:
-    """Start the API server."""
     try:
         import uvicorn
     except ImportError:
-        print(
-            "Error: Web server dependencies not installed.\n"
-            "Install with: pip install agentpipe[web]",
-            file=sys.stderr,
-        )
+        print("Error: Run: pip install agentpipe[web]", file=sys.stderr)
         return 1
 
     from agentpipe import config
     from agentpipe.web.api import create_app
 
-    # CLI flags override config (which reads from env vars)
+    # Set up logging so API task logs appear on console
+    logging.basicConfig(
+        level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO),
+        format="%(asctime)s %(name)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
     host = getattr(args, "host", None) or config.HOST
     port = getattr(args, "port", None) or config.PORT
-    log_level = config.LOG_LEVEL
 
     app = create_app(workspace=str(workspace))
 
     print("AgentPipe API server")
-    print(f"  Host:      {host}:{port}")
-    print(f"  API:       http://{host}:{port}/api/pipelines")
-    print(f"  WebSocket: ws://{host}:{port}/ws")
-    print(f"  Workspace: {workspace}")
+    print(f"  Host:       {host}:{port}")
+    print(f"  Pipelines:  {config.PIPELINES_DIR}")
+    if config.MODELS_FILE:
+        print(f"  Models:     {config.MODELS_FILE}")
+    if config.LOGS_DIR:
+        print(f"  Logs:       {config.LOGS_DIR}")
+    print(f"  API:        http://{host}:{port}/api/pipelines")
     print()
 
-    uvicorn.run(app, host=host, port=port, log_level=log_level)
+    uvicorn.run(app, host=host, port=port, log_level=config.LOG_LEVEL)
     return 0

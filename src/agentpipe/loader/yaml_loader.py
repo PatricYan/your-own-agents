@@ -17,11 +17,7 @@ from agentpipe.models.registry import ModelConfig, load_models_from_file, load_m
 
 @dataclass
 class PipelineConfig:
-    """Complete pipeline configuration including models.
-
-    Loaded from a single YAML file that contains both the pipeline
-    definition and model configurations.
-    """
+    """Pipeline + models. Loaded from one YAML file."""
 
     pipeline: Pipeline
     models: list[ModelConfig] = field(default_factory=list)
@@ -37,11 +33,11 @@ def load_config_from_yaml(path: str | Path) -> PipelineConfig:
         models:
           - name: gpt-4o
             provider: openai
-            connection: {api_key_env: OPENAI_API_KEY, model: gpt-4o}
+            connection: {api_key: OPENAI_API_KEY, model: gpt-4o}
 
     2. Reference a separate models file::
 
-        models_file: examples/models.yaml
+        models: models.yaml
 
     3. No models (for testing — models must be provided at runtime)
 
@@ -58,15 +54,24 @@ def load_config_from_yaml(path: str | Path) -> PipelineConfig:
     raw = yaml.safe_load(path.read_text())
     pipeline = load_pipeline_from_dict(raw)
 
-    # Load models
+    # Load models from the path specified by "models" key
     models: list[ModelConfig] = []
-    if "models_file" in raw:
-        models_path = Path(raw["models_file"])
-        if not models_path.is_absolute():
-            models_path = path.parent / models_path
-        models = load_models_from_file(models_path)
-    elif "models" in raw and isinstance(raw["models"], list):
-        models = load_models_from_list(raw["models"])
+    models_ref = raw.get("models")
+
+    if models_ref:
+        if isinstance(models_ref, str):
+            models = load_models_from_file(models_ref)
+        elif isinstance(models_ref, list):
+            # Inline list of model dicts
+            models = load_models_from_list(models_ref)
+    else:
+        # Fall back to AGENTPIPE_MODELS env var
+        from agentpipe import config
+
+        if config.MODELS_FILE:
+            global_path = Path(config.MODELS_FILE)
+            if global_path.exists():
+                models = load_models_from_file(global_path)
 
     return PipelineConfig(pipeline=pipeline, models=models)
 
@@ -167,6 +172,7 @@ def _parse_tasks(
         task = TaskDefinition(
             name=raw_task["name"],
             goal=raw_task.get("goal", ""),
+            prompts=raw_task.get("prompts", []),
             system_prompt=raw_task.get("system_prompt"),
             prompt_template=raw_task.get("prompt_template"),
             models=raw_task.get("models", []),

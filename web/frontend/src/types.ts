@@ -9,8 +9,8 @@ export interface PipelineNode {
 }
 
 export interface PipelineEdge {
-  source: string;
-  target: string;
+  from: string;
+  to: string;
   condition?: string;
 }
 
@@ -48,11 +48,17 @@ export interface AgentInfo {
   pipeline: string;
 }
 
-export interface WSEvent {
+export interface LogEntry {
   type: string;
-  run_id?: string;
-  task?: string;
-  status?: string;
-  details?: Record<string, any>;
-  updates?: Record<string, string>;
+  text?: string;
+  name?: string;
+  args?: string;
+  iteration?: number;
+  phase?: string;
+}
+
+export interface LogResponse {
+  logs: LogEntry[];
+  cursor: number;
+  status: string;
 }

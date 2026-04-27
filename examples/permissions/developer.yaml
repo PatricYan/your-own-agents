@@ -2,8 +2,8 @@
 "*": allow
 webfetch: deny
 bash:
-  "*": ask
-  "git *": allow
+  "*": allow
+  "git *": deny
   "npm *": allow
   "pytest *": allow
   "ruff *": allow

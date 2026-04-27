@@ -1,0 +1,8 @@
+# Default permissions — read-only
+# Edit, shell, web are denied unless the task overrides.
+"*": deny
+read: allow
+glob: allow
+grep: allow
+list: allow
+submit_result: allow

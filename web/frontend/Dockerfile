@@ -1,15 +1,13 @@
 # AgentPipe Frontend
-#
-# REACT_APP_API_URL is set at build time via --build-arg or docker-compose args.
 
-FROM node:20-slim AS build
+FROM oven/bun:1 AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile 2>/dev/null || bun install
 COPY . .
 ARG REACT_APP_API_URL
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
-RUN npm run build
+RUN bun run build
 
 FROM nginx:alpine
 COPY --from=build /app/build /usr/share/nginx/html

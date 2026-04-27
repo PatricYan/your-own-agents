@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -130,6 +131,26 @@ class HttpSession:
         raise RuntimeError(
             f"Request to {url} failed after {self._max_retries + 1} attempts: {last_error}"
         )
+
+    async def post_stream(
+        self,
+        url: str,
+        json_data: dict[str, Any],
+        headers: dict[str, str],
+    ) -> AsyncIterator[str]:
+        """POST JSON and yield SSE lines as they arrive.
+
+        Yields each line from the server-sent events stream.
+        """
+        client = self._get_client()
+        async with client.stream("POST", url, json=json_data, headers=headers) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data.strip() == "[DONE]":
+                        return
+                    yield data
 
     def _calculate_delay(self, attempt: int, response: httpx.Response | None = None) -> float:
         """Calculate retry delay with exponential backoff.

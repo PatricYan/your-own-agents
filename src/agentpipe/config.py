@@ -1,18 +1,15 @@
-"""Central configuration — reads from environment variables.
-
-All defaults are defined here. No other file should hardcode
-port numbers, hostnames, or URLs.
-
-Configuration priority: env var > default value here.
-"""
+"""Central configuration — loads .env automatically, reads from environment variables."""
 
 from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def get(key: str, default: str = "") -> str:
-    """Read a config value from the environment."""
     return os.environ.get(key, default)
 
 
@@ -21,5 +18,14 @@ HOST = get("AGENTPIPE_HOST", "0.0.0.0")
 PORT = int(get("AGENTPIPE_PORT", "8420"))
 LOG_LEVEL = get("AGENTPIPE_LOG_LEVEL", "info")
 
-# === Ollama ===
-OLLAMA_BASE_URL = get("OLLAMA_BASE_URL", "http://localhost:11434")
+# === Pipelines ===
+PIPELINES_DIR = get("AGENTPIPE_PIPELINES_DIR", "examples")
+
+# === Models ===
+MODELS_FILE = get("AGENTPIPE_MODELS", "")
+
+# === Agent Rules ===
+RULES_FILE = get("AGENTPIPE_RULES", "")
+
+# === Logs ===
+LOGS_DIR = get("AGENTPIPE_LOGS_DIR", "")

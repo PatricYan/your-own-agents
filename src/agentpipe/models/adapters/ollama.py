@@ -14,15 +14,11 @@ class OllamaModelProvider(ModelProvider):
 
     def __init__(
         self,
-        base_url: str | None = None,
-        model: str = "llama3",
+        base_url: str,
+        model: str = "",
         default_params: dict[str, Any] | None = None,
         timeout: float = 120.0,
     ) -> None:
-        if base_url is None:
-            from agentpipe import config
-
-            base_url = config.OLLAMA_BASE_URL
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._default_params = default_params or {}
@@ -64,7 +60,7 @@ class OllamaModelProvider(ModelProvider):
             payload["tools"] = [t.to_openai_schema() for t in tools]
 
         data = await self._session.post_json(
-            f"{self._base_url}/api/chat", payload, {"Content-Type": "application/json"}
+            self._base_url, payload, {"Content-Type": "application/json"}
         )
 
         msg_data = data.get("message", {})

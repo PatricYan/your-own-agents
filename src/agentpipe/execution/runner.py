@@ -21,6 +21,33 @@ logger = logging.getLogger(__name__)
 ProviderFactory = Callable[[str], ModelProvider]
 
 
+def _wrap_content_cb(cb: Any, task_name: str) -> Any:
+    """Wrap a task-aware on_content callback with a per-task closure."""
+
+    def wrapper(text: str) -> None:
+        cb(text, task_name=task_name)
+
+    return wrapper
+
+
+def _wrap_tool_call_cb(cb: Any, task_name: str) -> Any:
+    """Wrap a task-aware on_tool_call callback with a per-task closure."""
+
+    def wrapper(name_: str, args: dict) -> None:
+        cb(name_, args, task_name=task_name)
+
+    return wrapper
+
+
+def _wrap_iteration_cb(cb: Any, task_name: str) -> Any:
+    """Wrap a task-aware on_iteration callback with a per-task closure."""
+
+    def wrapper(iteration: int, phase: str, details: list) -> None:
+        cb(iteration, phase, details, task_name=task_name)
+
+    return wrapper
+
+
 class TaskRunner:
     """Runs individual tasks as autonomous agents.
 
@@ -37,6 +64,10 @@ class TaskRunner:
         tool_registry: ToolRegistry | None = None,
         on_before_iteration: BeforeIterationHook | None = None,
         provider_factory: ProviderFactory | None = None,
+        on_content: Any | None = None,
+        on_tool_call: Any | None = None,
+        on_iteration: Any | None = None,
+        on_permission_ask: Any | None = None,
     ) -> None:
         """Initialize the task runner.
 
@@ -51,6 +82,10 @@ class TaskRunner:
         self._tool_registry = tool_registry or ToolRegistry()
         self._on_before_iteration = on_before_iteration
         self._provider_factory = provider_factory
+        self._on_content = on_content
+        self._on_tool_call = on_tool_call
+        self._on_iteration = on_iteration
+        self._on_permission_ask = on_permission_ask
 
     def _get_provider(self, model_name: str) -> ModelProvider:
         """Get a provider for a model — creates a new instance if factory is set."""
@@ -76,32 +111,56 @@ class TaskRunner:
         # Each task gets its own provider (own session, own context)
         provider = self._get_provider(model)
 
+        from agentpipe.execution.log_writer import TaskLogWriter
+
         logger.info("Agent '%s' starting with model '%s'", task.name, model)
+        log_writer = TaskLogWriter(task.name)
+
+        # Create per-task callback wrappers that capture the task name.
+        # This is critical for parallel tasks — without wrappers, a shared
+        # _current_task_name dict causes a race condition where logs from
+        # concurrent tasks get attributed to whichever task started last.
+        task_on_content = self._on_content
+        task_on_tool_call = self._on_tool_call
+        task_on_iteration = self._on_iteration or on_iteration
+
+        if self._on_content and hasattr(self._on_content, "_task_aware"):
+            task_on_content = _wrap_content_cb(self._on_content, task.name)
+        if self._on_tool_call and hasattr(self._on_tool_call, "_task_aware"):
+            task_on_tool_call = _wrap_tool_call_cb(self._on_tool_call, task.name)
+        if task_on_iteration and hasattr(task_on_iteration, "_task_aware"):
+            task_on_iteration = _wrap_iteration_cb(task_on_iteration, task.name)
 
         agent_loop = AgentLoop(
             provider=provider,
             tool_registry=self._tool_registry,
-            on_iteration=on_iteration,
+            on_iteration=task_on_iteration,
             on_before_iteration=self._on_before_iteration,
+            on_content=task_on_content,
+            on_tool_call=task_on_tool_call,
+            on_permission_ask=self._on_permission_ask,
+            log_writer=log_writer,
         )
 
-        result = await agent_loop.run(task, input_data)
-
-        if not result.completed:
-            if result.error:
-                raise RuntimeError(f"Agent '{task.name}' failed: {result.error}")
-            logger.warning(
-                "Agent '%s' did not complete within %d iterations",
-                task.name,
-                task.max_iterations,
-            )
+        try:
+            result = await agent_loop.run(task, input_data)
+            log_writer.log_complete(result)
+        except Exception:
+            log_writer.close()
+            raise
 
         logger.info(
-            "Agent '%s' finished: %d iterations, %d tool calls, %d tokens",
+            "Agent '%s' finished: completed=%s, %d iterations, %d tool calls, %d tokens",
             task.name,
+            result.completed,
             result.iterations,
             result.total_tool_calls,
             result.total_tokens,
         )
 
+        if not result.completed and result.error:
+            raise RuntimeError(f"Agent '{task.name}' failed: {result.error}")
+
         return result.output
+
+    # Logs are now written incrementally by TaskLogWriter — no batch save needed.

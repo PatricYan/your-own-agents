@@ -231,3 +231,6 @@ web/frontend/.env.local
 .specify
 specs
 opencode.json
+*.yaml
+logs
+data

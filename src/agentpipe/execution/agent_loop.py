@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from agentpipe.common import Conversation, ToolCall
@@ -97,11 +98,19 @@ class AgentLoop:
         tool_registry: ToolRegistry,
         on_iteration: IterationCallback | None = None,
         on_before_iteration: BeforeIterationHook | None = None,
+        on_content: Any | None = None,
+        on_tool_call: Any | None = None,
+        on_permission_ask: Any | None = None,
+        log_writer: Any | None = None,
     ) -> None:
         self._provider = provider
         self._tool_registry = tool_registry
         self._on_iteration = on_iteration
         self._on_before_iteration = on_before_iteration
+        self._on_content = on_content
+        self._on_tool_call = on_tool_call
+        self._on_permission_ask = on_permission_ask
+        self._log_writer = log_writer
 
     async def run(
         self,
@@ -119,24 +128,34 @@ class AgentLoop:
         # Build system prompt
         system = self._build_system_prompt(task, input_data)
         conversation.add_system(system)
+        if self._log_writer:
+            self._log_writer.log_system_prompt(system)
 
         # Build initial user message
-        conversation.add_user(self._build_initial_message(task, input_data))
+        initial_msg = self._build_initial_message(task, input_data)
+        conversation.add_user(initial_msg)
+        if self._log_writer:
+            self._log_writer.log_user_message(initial_msg)
 
         # Get the submit_result tool for detecting completion
         submit_tool = self._get_submit_tool()
 
         for iteration in range(task.max_iterations):
-            # ---- human-in-the-loop: allow mid-run changes ----
+            # ---- human-in-the-loop: allow mid-run changes (supports sync and async) ----
             if self._on_before_iteration is not None:
-                updated = self._on_before_iteration(iteration, task)
+                import inspect
+
+                result = self._on_before_iteration(iteration, task)
+                if inspect.isawaitable(result):
+                    updated = await result
+                else:
+                    updated = result
                 if updated is not None:
                     # Apply changes — rebuild system prompt if goal/prompt changed
                     old_goal, old_prompt = task.goal, task.system_prompt
                     task = updated
                     if task.goal != old_goal or task.system_prompt != old_prompt:
-                        # Inject an updated instruction into the conversation
-                        conversation.add_user(
+                        update_msg = (
                             f"[System update] Your instructions have been updated.\n\n"
                             f"**New goal**: {task.goal}"
                             + (
@@ -145,6 +164,9 @@ class AgentLoop:
                                 else ""
                             )
                         )
+                        conversation.add_user(update_msg)
+                        if self._log_writer:
+                            self._log_writer.log_user_message(update_msg)
                         logger.info(
                             "Agent '%s': task updated at iteration %d",
                             task.name,
@@ -181,7 +203,9 @@ class AgentLoop:
 
             # Think: send conversation to model
             try:
-                response = await self._provider.chat(conversation.messages, tools=tool_defs)
+                response = await self._provider.chat(
+                    conversation.messages, tools=tool_defs, on_content=self._on_content
+                )
             except Exception as e:
                 logger.error(
                     "Agent '%s' model call failed at iteration %d: %s", task.name, iteration, e
@@ -199,35 +223,59 @@ class AgentLoop:
             record.model_content = response.content
             record.stop_reason = response.stop_reason.value
 
+            # Log the model's full response
+            if self._log_writer:
+                tc_dicts = (
+                    [{"name": tc.name, "arguments": tc.arguments} for tc in response.tool_calls]
+                    if response.tool_calls
+                    else []
+                )
+                self._log_writer.log_model_response(
+                    response.content, tc_dicts, response.stop_reason.value
+                )
+
             # Track token usage
             if response.usage:
                 total_tokens += response.usage.get("total_tokens", 0)
                 prompt_tokens += response.usage.get("prompt_tokens", 0)
                 completion_tokens += response.usage.get("completion_tokens", 0)
 
-            # If model returned content without tool calls → done
+            # If model returned content without tool calls → re-prompt to use tools
+            # The agent must call submit_result to complete. Plain text is not enough.
             if response.stop_reason == StopReason.END_TURN and not response.tool_calls:
                 conversation.add_assistant(content=response.content)
+                reprompt = (
+                    "You must use tools to accomplish your goal. "
+                    "When you are done, call the submit_result tool with your final output as JSON. "
+                    "Do not just respond with text — use the available tools."
+                )
+                conversation.add_user(reprompt)
+                if self._log_writer:
+                    self._log_writer.log_user_message(reprompt)
                 iteration_log.append(record)
                 if self._on_iteration:
-                    self._on_iteration(iteration, "thinking", [])
-                return AgentLoopResult(
-                    output=self._parse_final_output(response.content),
-                    iterations=iteration + 1,
-                    total_tool_calls=total_tool_calls,
-                    conversation=conversation,
-                    iteration_log=iteration_log,
-                    completed=True,
-                    total_tokens=total_tokens,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                )
+                    self._on_iteration(iteration, "re-prompting", [])
+                continue
 
             # Act: execute tool calls
             if response.tool_calls:
                 conversation.add_assistant(content=response.content, tool_calls=response.tool_calls)
 
                 for tc in response.tool_calls:
+                    # Pause check before each tool execution (not just between iterations)
+                    # so that pause takes effect mid-iteration instead of waiting for the
+                    # entire iteration to finish.
+                    if self._on_before_iteration is not None:
+                        import inspect
+
+                        mid_result = self._on_before_iteration(iteration, task)
+                        if inspect.isawaitable(mid_result):
+                            mid_updated = await mid_result
+                        else:
+                            mid_updated = mid_result
+                        if mid_updated is not None:
+                            task = mid_updated
+
                     total_tool_calls += 1
                     if task.max_tool_calls and total_tool_calls > task.max_tool_calls:
                         conversation.add_tool_result(
@@ -235,8 +283,19 @@ class AgentLoop:
                         )
                         continue
 
+                    if self._on_tool_call:
+                        self._on_tool_call(tc.name, tc.arguments)
                     result_text = await self._execute_tool(tc, allowed_tools, task.permissions)
                     conversation.add_tool_result(tc.id, result_text)
+
+                    # Log tool call + result
+                    if self._log_writer:
+                        self._log_writer.log_tool_call(tc.name, tc.arguments, result_text)
+                        self._log_writer.log_tool_result(tc.id, result_text)
+
+                    # Show permission denials to the user
+                    if result_text.startswith("Error:") and self._on_content:
+                        self._on_content(f"\n  ✗ {result_text}\n")
 
                     record.tool_calls.append({"name": tc.name, "arguments": tc.arguments})
                     record.tool_results.append(
@@ -252,6 +311,13 @@ class AgentLoop:
                             and submit_tool.last_result is not None
                         ):
                             iteration_log.append(record)
+                            if self._log_writer:
+                                self._log_writer.log_iteration(
+                                    iteration,
+                                    record.model_content,
+                                    record.tool_calls,
+                                    record.tool_results,
+                                )
                             return AgentLoopResult(
                                 output=self._parse_final_output(submit_tool.last_result),
                                 iterations=iteration + 1,
@@ -265,6 +331,10 @@ class AgentLoop:
                             )
 
                 iteration_log.append(record)
+                if self._log_writer:
+                    self._log_writer.log_iteration(
+                        iteration, record.model_content, record.tool_calls, record.tool_results
+                    )
                 if self._on_iteration:
                     self._on_iteration(
                         iteration, "acting", [{"name": tc.name} for tc in response.tool_calls]
@@ -329,14 +399,19 @@ class AgentLoop:
 
     def _build_system_prompt(self, task: TaskDefinition, input_data: dict[str, Any]) -> str:
         parts = []
-        if task.system_prompt:
-            parts.append(task.system_prompt)
-        else:
-            parts.append(
-                "You are an autonomous agent. You have tools available to accomplish your goal. "
-                "Use them as needed. When you have achieved the goal, call the submit_result tool "
-                "with your final output. Be thorough and verify your work."
-            )
+
+        # Agent rules — loaded from AGENTPIPE_RULES env var
+        from agentpipe import config
+
+        if config.RULES_FILE:
+            rules_path = Path(config.RULES_FILE)
+            if rules_path.exists():
+                parts.append(rules_path.read_text().strip())
+
+        # User-defined prompts (skills, principles, role instructions)
+        combined = task.effective_system_prompt()
+        if combined:
+            parts.append(combined)
 
         # Inform the agent of its permissions (OpenCode format)
         perms = task.permissions
@@ -379,24 +454,43 @@ class AgentLoop:
     async def _execute_tool(
         self, tool_call: ToolCall, allowed_tools: set[str], permissions: Any
     ) -> str:
-        """Execute a tool call, enforcing OpenCode-style permissions.
+        """Execute a tool call, enforcing permissions strictly.
 
-        Checks both the tool-level allowed set AND granular pattern rules
-        (e.g., bash: {"git *": allow, "rm *": deny}).
+        Permission levels:
+        - allow: execute immediately
+        - ask: prompt user via on_permission_ask callback; deny if no callback
+        - deny: block with error message
         """
         if tool_call.name not in allowed_tools:
             return f"Error: Tool '{tool_call.name}' is not permitted for this task"
 
-        # submit_result always bypasses granular checks (it's the completion signal)
+        # submit_result always bypasses permission checks
         if tool_call.name == "submit_result":
-            pass  # skip granular check
+            pass
         else:
-            # Granular check: extract the input value for pattern matching
             input_value = self._get_tool_input_value(tool_call)
+
+            # Check deny
             if permissions.is_denied(tool_call.name, input_value):
                 return (
                     f"Error: '{tool_call.name}' with input '{input_value}' is denied by permissions"
                 )
+
+            # Check ask — requires user approval
+            if permissions.needs_approval(tool_call.name, input_value):
+                if self._on_permission_ask:
+                    approved = self._on_permission_ask(tool_call.name, input_value)
+                    if not approved:
+                        return (
+                            f"Error: '{tool_call.name}' with input '{input_value}' "
+                            f"was denied by user (permission level: ask)"
+                        )
+                else:
+                    # No callback = non-interactive mode → deny ask-level tools
+                    return (
+                        f"Error: '{tool_call.name}' requires approval (permission level: ask). "
+                        f"Run with --interactive (-i) to approve at runtime."
+                    )
 
         try:
             tool = self._tool_registry.get(tool_call.name)
@@ -444,4 +538,4 @@ class AgentLoop:
                 return parsed
         except (json.JSONDecodeError, TypeError):
             pass
-        return {"text": content, "raw": content}
+        return {"text": content}

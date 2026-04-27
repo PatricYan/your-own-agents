@@ -134,12 +134,18 @@ class DAGExecutor:
 
                     # Check if upstream conditions allow this task to run
                     if not self._should_execute(task_name, pipeline, task_outputs, run):
-                        record.set_status(TaskStatus.SKIPPED)
-                        skipped_tasks.add(task_name)
-                        self._emit_status(
-                            task_name, TaskStatus.SKIPPED, {"reason": "condition not met"}
+                        # Determine why: dependency failed or condition not met
+                        upstream_failed = any(
+                            run.task_records.get(e.upstream, TaskExecutionRecord("")).status
+                            == TaskStatus.FAILED
+                            for e in pipeline.edges
+                            if e.downstream == task_name
                         )
-                        # Skip all downstream tasks too
+                        reason = "dependency failed" if upstream_failed else "condition not met"
+                        record.set_status(TaskStatus.SKIPPED)
+                        record.error = reason
+                        skipped_tasks.add(task_name)
+                        self._emit_status(task_name, TaskStatus.SKIPPED, {"reason": reason})
                         self._mark_downstream_skipped(task_name, pipeline, skipped_tasks)
                         continue
 
@@ -148,11 +154,11 @@ class DAGExecutor:
                     # Gather input from upstream tasks
                     upstream_names = pipeline.get_upstream_tasks(task_name)
                     if upstream_names:
-                        merged_input: dict[str, Any] = {}
+                        # Structure input with provenance: each upstream task's output under its name
+                        task_input: dict[str, Any] = {}
                         for upstream in upstream_names:
                             if upstream in task_outputs:
-                                merged_input.update(task_outputs[upstream])
-                        task_input = merged_input
+                                task_input[upstream] = task_outputs[upstream]
                     else:
                         task_input = initial_input
 
@@ -219,29 +225,39 @@ class DAGExecutor:
         if not incoming_edges:
             return True  # Entry task, always execute
 
-        # For a task to run, at least one incoming edge must be active
+        # Check if any upstream failed — if so, this task cannot run
+        for edge in incoming_edges:
+            up_record = run.task_records.get(edge.upstream)
+            if up_record and up_record.status == TaskStatus.FAILED:
+                return False  # dependency failed → skip this task
+
+        # For a task to run, at least one incoming edge must have completed upstream
+        has_active_edge = False
         for edge in incoming_edges:
             up_record = run.task_records.get(edge.upstream)
             if up_record is None or up_record.status != TaskStatus.COMPLETED:
-                continue  # Upstream not completed
+                continue
 
-            # If edge has no condition, it's active
             if edge.condition is None:
-                return True
+                has_active_edge = True
+                break
 
-            # Evaluate condition against upstream task's output
             up_output = task_outputs.get(edge.upstream, {})
             if evaluate_condition(edge.condition, up_output):
-                return True
+                has_active_edge = True
+                break
 
-        # Check if all incoming edges have been processed
+        if has_active_edge:
+            return True
+
+        # Check if all upstreams are done (completed, failed, or skipped)
         all_done = all(
             run.task_records.get(e.upstream, TaskExecutionRecord("")).status
             in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.SKIPPED)
             for e in incoming_edges
         )
 
-        return not all_done  # True if some upstreams haven't finished yet
+        return not all_done  # True if some upstreams still running
 
     def _mark_downstream_skipped(
         self, task_name: str, pipeline: Pipeline, skipped: set[str]
@@ -324,6 +340,7 @@ class DAGExecutor:
                     TaskStatus.COMPLETED,
                     {
                         "duration_ms": record.duration_ms,
+                        "output": result,
                     },
                 )
                 return result
@@ -385,6 +402,7 @@ class DAGExecutor:
                         {
                             "duration_ms": record.duration_ms,
                             "recovered": True,
+                            "output": recovered,
                         },
                     )
                     return recovered
