@@ -1,0 +1,13 @@
+# Example 1: Hello World
+#
+# Run: agentpipe run examples/01-hello-world.yaml --watch
+
+name: hello-world
+execution_strategy: fail_fast
+models: my_models.yaml
+
+tasks:
+  - name: greet-hello-world
+    goal: examples/goals/hello-world.md
+    primary_model: claude-opus-4-6
+    max_iterations: 3

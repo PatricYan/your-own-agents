@@ -1,0 +1,53 @@
+# Models configuration
+#
+# api_key: your actual API key
+# base_url: provider API endpoint (full URL)
+# model: model name
+#
+
+models:
+  # --- OpenAI ---
+  - name: default
+    provider: openai
+    connection:
+      api_key: sk-your-key-here
+      base_url: https://api.openai.com/v1/chat/completions
+      model: gpt-4o-mini
+
+  # --- Anthropic ---
+  - name: default
+    provider: anthropic
+    connection:
+      api_key: sk-ant-your-key-here
+      base_url: https://api.anthropic.com/v1/messages
+      model: claude-sonnet
+
+  # --- Microsoft Foundry (Anthropic) ---
+  - name: default
+    provider: microsoft-foundry-anthropic
+    connection:
+      api_key: your-foundry-key
+      base_url: https://your-resource.services.ai.azure.com/anthropic/v1/messages
+      model: claude-haiku
+
+  # --- Microsoft Foundry (OpenAI) ---
+  - name: gpt
+    provider: microsoft-foundry-openai
+    connection:
+      api_key: your-foundry-key
+      base_url: https://your-resource.cognitiveservices.azure.com/openai/v1/chat/completions
+      model: gpt-4o
+
+  # --- Ollama (local, no api_key needed) ---
+  - name: local
+    provider: ollama
+    connection:
+      base_url: http://localhost:11434/api/chat
+      model: llama3
+
+  # Placeholder — uncomment your provider above and remove this
+  # - name: default
+  #   provider: http
+  #   connection:
+  #     base_url: http://localhost:8080
+  #     model: placeholder

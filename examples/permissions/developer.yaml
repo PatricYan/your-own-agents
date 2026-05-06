@@ -1,0 +1,10 @@
+# Developer — read, edit, write, run commands
+"*": allow
+webfetch: deny
+bash:
+  "*": allow
+  "git *": deny
+  "npm *": allow
+  "pytest *": allow
+  "ruff *": allow
+  "rm *": deny

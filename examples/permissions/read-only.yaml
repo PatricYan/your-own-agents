@@ -1,0 +1,6 @@
+# Read-only — can look but not touch
+"*": deny
+read: allow
+glob: allow
+grep: allow
+list: allow

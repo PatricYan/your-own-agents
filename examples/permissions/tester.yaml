@@ -1,0 +1,9 @@
+# Tester — read + run commands, no writing
+"*": deny
+read: allow
+glob: allow
+grep: allow
+list: allow
+bash:
+  "*": allow
+  "rm *": deny
