@@ -53,7 +53,7 @@ Copy `examples/models.yaml` to `my_models.yaml`, uncomment your provider, fill i
 # my_models.yaml
 models:
   - name: default
-    provider: microsoft-foundry-anthropic
+    provider: anthropic
     connection:
       api_key: your-actual-api-key
       base_url: https://your-resource.services.ai.azure.com/anthropic/v1/messages
