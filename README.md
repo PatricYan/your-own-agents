@@ -64,7 +64,7 @@ Set `AGENTPIPE_MODELS=my_models.yaml` in `.env`.
 
 The `api_key` is the actual key value. The `base_url` is the full API endpoint URL — the code uses it directly without appending any path.
 
-Providers: `openai`, `anthropic`, `microsoft-foundry-anthropic`, `microsoft-foundry-openai`, `ollama`, `http`
+Providers: `openai`, `anthropic`, `ollama`, `http`, etc
 
 See `examples/models.yaml` for templates of all providers.
 
